@@ -1,12 +1,27 @@
 require('dotenv').config();
 
+console.log('Starting app...');
+console.log('TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
+console.log('TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
+console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE);
+
 const express = require('express');
+console.log('Express loaded');
+
 const { MessagingResponse } = require('twilio').twiml;
+console.log('Twilio loaded');
 
 const db = require('./db');
+console.log('DB loaded');
+
 const { parseManagerAnnouncement, parseGolferResponse } = require('./parser');
+console.log('Parser loaded');
+
 const { createEventAndNotify, recordResponse, forwardToManager } = require('./events');
+console.log('Events loaded');
+
 const { sendSMS } = require('./sms');
+console.log('SMS loaded');
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
