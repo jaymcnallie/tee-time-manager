@@ -199,12 +199,12 @@ app.get('/consent', (req, res) => {
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6;">
         <h1>SMS Consent Record</h1>
-        <p>All members of the Sunday Golf Group have provided verbal consent to receive SMS messages regarding weekly tee time coordination from this service.</p>
+        <p>All members of the Wigwam Degenerates Sunday Golf Group have provided verbal consent to receive SMS messages regarding weekly tee time coordination from this service.</p>
         <h2>Details</h2>
         <ul>
-          <li><strong>Group:</strong> Sunday Golf Group</li>
-          <li><strong>Consent collected by:</strong> [Your Name]</li>
-          <li><strong>Date:</strong> [Date]</li>
+          <li><strong>Group:</strong> Wigwam Degenerates Sunday Golf Group</li>
+          <li><strong>Consent collected by:</strong> Jay McNallie</li>
+          <li><strong>Date:</strong>11/30/2025</li>
           <li><strong>Number of members:</strong> 20</li>
         </ul>
         <h2>Purpose</h2>
@@ -217,7 +217,7 @@ app.get('/consent', (req, res) => {
         <h2>Opt-Out</h2>
         <p>Members may reply <strong>STOP</strong> at any time to unsubscribe from all messages.</p>
         <h2>Contact</h2>
-        <p>For questions about this service, contact Jay McNallie at jaymcnallie@gmail.com..</p>
+        <p>For questions about this service, contact Jay McNallie.</p>
       </body>
     </html>
   `);
