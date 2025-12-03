@@ -25,6 +25,20 @@ app.use(express.json());
 
 const MANAGER_PHONE = process.env.MANAGER_PHONE;
 
+// Initialize database before starting server
+initDb().then(() => {
+  console.log('DB initialized');
+
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Tee Time Manager running on port ${PORT}`);
+    console.log(`Webhook URL: https://tee-time-manager-production.up.railway.app/sms`);
+  });
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
+
 /**
  * Main SMS webhook - handles all incoming messages from Telnyx
  */
@@ -229,9 +243,3 @@ const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Tee Time Manager running on port ${PORT}`);
-  console.log(`Webhook URL: https://tee-time-manager-production.up.railway.app/sms`);
-});
