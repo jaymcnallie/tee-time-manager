@@ -1,21 +1,29 @@
-const twilio = require('twilio');
-
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
-const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+const TELNYX_API_KEY = process.env.TELNYX_API_KEY;
+const fromNumber = process.env.TELNYX_PHONE_NUMBER;
 
 async function sendSMS(to, body) {
   try {
-    const message = await client.messages.create({
-      body,
-      from: fromNumber,
-      to
+    const response = await fetch('https://api.telnyx.com/v2/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${TELNYX_API_KEY}`
+      },
+      body: JSON.stringify({
+        from: fromNumber,
+        to: to,
+        text: body
+      })
     });
-    console.log(`SMS sent to ${to}: ${message.sid}`);
-    return message;
+    
+    const data = await response.json();
+    
+    if (!response.ok) {
+      throw new Error(data.errors?.[0]?.detail || 'Failed to send SMS');
+    }
+    
+    console.log(`SMS sent to ${to}: ${data.data.id}`);
+    return data;
   } catch (error) {
     console.error(`Failed to send SMS to ${to}:`, error.message);
     throw error;

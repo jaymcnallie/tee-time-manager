@@ -1,15 +1,11 @@
 require('dotenv').config();
 
 console.log('Starting app...');
-console.log('TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
-console.log('TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
+console.log('TELNYX_API_KEY exists:', !!process.env.TELNYX_API_KEY);
 console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE);
 
 const express = require('express');
 console.log('Express loaded');
-
-const { MessagingResponse } = require('twilio').twiml;
-console.log('Twilio loaded');
 
 const db = require('./db');
 console.log('DB loaded');
@@ -30,44 +26,54 @@ app.use(express.json());
 const MANAGER_PHONE = process.env.MANAGER_PHONE;
 
 /**
- * Main SMS webhook - handles all incoming messages
+ * Main SMS webhook - handles all incoming messages from Telnyx
  */
 app.post('/sms', async (req, res) => {
-  const from = req.body.From;
-  const body = req.body.Body;
+  // Telnyx sends data in a different format
+  const payload = req.body.data?.payload || req.body;
+  const from = payload.from?.phone_number || payload.from;
+  const body = payload.text || payload.body;
   
   console.log(`SMS from ${from}: ${body}`);
   
-  const twiml = new MessagingResponse();
+  let responseText = '';
   
   try {
     // Check if this is from the manager
     if (from === MANAGER_PHONE) {
-      await handleManagerMessage(body, twiml);
+      responseText = await handleManagerMessage(body);
     } else {
-      await handleGolferMessage(from, body, twiml);
+      responseText = await handleGolferMessage(from, body);
     }
   } catch (error) {
     console.error('Error handling SMS:', error);
-    twiml.message('Something went wrong. Please try again.');
+    responseText = 'Something went wrong. Please try again.';
   }
   
-  res.type('text/xml');
-  res.send(twiml.toString());
+  // Send reply via API (Telnyx doesn't use TwiML)
+  if (responseText) {
+    try {
+      await sendSMS(from, responseText);
+    } catch (err) {
+      console.error('Failed to send reply:', err);
+    }
+  }
+  
+  // Acknowledge receipt to Telnyx
+  res.status(200).json({ success: true });
 });
 
 /**
  * Handle messages from the group manager
  */
-async function handleManagerMessage(body, twiml) {
+async function handleManagerMessage(body) {
   // Try to parse as announcement
   const announcement = parseManagerAnnouncement(body);
   
   if (announcement) {
     const { date, course, times } = announcement;
     const { eventId, notified } = await createEventAndNotify(date, course, times);
-    twiml.message(`Event created for ${date}. Invite sent to ${notified} golfers.`);
-    return;
+    return `Event created for ${date}. Invite sent to ${notified} golfers.`;
   }
   
   // Check for admin commands
@@ -77,12 +83,10 @@ async function handleManagerMessage(body, twiml) {
     const event = db.getActiveEvent.get();
     if (event) {
       const { generateSummary } = require('./events');
-      const summary = generateSummary(event.id);
-      twiml.message(summary);
+      return generateSummary(event.id);
     } else {
-      twiml.message('No active event.');
+      return 'No active event.';
     }
-    return;
   }
   
   if (command === 'closed') {
@@ -91,18 +95,16 @@ async function handleManagerMessage(body, twiml) {
       const { generateSummary } = require('./events');
       const summary = generateSummary(event.id);
       db.closeEvent.run(event.id);
-      twiml.message(summary);
+      return summary;
     } else {
-      twiml.message('No active event to close.');
+      return 'No active event to close.';
     }
-    return;
   }
   
   if (command === 'list') {
     const golfers = db.getAllActiveGolfers.all();
     const names = golfers.map(g => g.name).join(', ');
-    twiml.message(`Golfers (${golfers.length}): ${names}`);
-    return;
+    return `Golfers (${golfers.length}): ${names}`;
   }
   
   if (command.startsWith('add ')) {
@@ -115,39 +117,34 @@ async function handleManagerMessage(body, twiml) {
       phone = '+' + phone;
       
       db.addGolfer.run(name, phone);
-      twiml.message(`Added ${name} (${phone})`);
+      return `Added ${name} (${phone})`;
     } else {
-      twiml.message('Format: add Name 5551234567');
+      return 'Format: add Name 5551234567';
     }
-    return;
   }
   
   if (command === 'help') {
-    twiml.message(
-      'Commands:\n' +
+    return 'Commands:\n' +
       '• Golf announcement to create event\n' +
       '• STATUS - current event summary\n' +
       '• CLOSED - send summary & close event\n' +
       '• LIST - all golfers\n' +
-      '• ADD Name Phone - add golfer'
-    );
-    return;
+      '• ADD Name Phone - add golfer';
   }
   
-  twiml.message('Unrecognized command. Reply HELP for options.');
+  return 'Unrecognized command. Reply HELP for options.';
 }
 
 /**
  * Handle messages from golfers
  */
-async function handleGolferMessage(from, body, twiml) {
+async function handleGolferMessage(from, body) {
   // Get or create golfer
   let golfer = db.getGolferByPhone.get(from);
   
   if (!golfer) {
     // Unknown number - could add auto-registration or just ignore
-    twiml.message('Your number is not registered. Contact the group manager.');
-    return;
+    return 'Your number is not registered. Contact the group manager.';
   }
   
   // Check if there's an active event
@@ -156,38 +153,33 @@ async function handleGolferMessage(from, body, twiml) {
   if (!event) {
     // No active event - forward to manager
     await forwardToManager(golfer, body);
-    twiml.message('No active event. Your message has been forwarded to the group manager.');
-    return;
+    return 'No active event. Your message has been forwarded to the group manager.';
   }
   
   // Check if we're past Friday (forward mode)
-  const eventDate = new Date(event.date);
   const now = new Date();
   const dayOfWeek = now.getDay();
   
   // If it's Saturday (6) or Sunday (0) for this event's week, forward to manager
-  // Simple check: if event is this week's Sunday and today is Sat/Sun
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     await forwardToManager(golfer, body);
-    twiml.message('Response window closed. Your message has been forwarded to the group manager.');
-    return;
+    return 'Response window closed. Your message has been forwarded to the group manager.';
   }
   
   // Try to parse response
   const response = parseGolferResponse(body);
   
   if (!response) {
-    twiml.message('Reply IN or OUT');
-    return;
+    return 'Reply IN or OUT';
   }
   
   // Record the response
   const result = await recordResponse(golfer, event.id, response);
-  twiml.message(result.message);
+  return result.message;
 }
 
 /**
- * SMS Consent page for Twilio verification
+ * SMS Consent page for verification
  */
 app.get('/consent', (req, res) => {
   res.send(`
@@ -199,12 +191,12 @@ app.get('/consent', (req, res) => {
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6;">
         <h1>SMS Consent Record</h1>
-        <p>All members of the Wigwam Degenerates Sunday Golf Group have provided verbal consent to receive SMS messages regarding weekly tee time coordination from this service.</p>
+        <p>All members of the Sunday Golf Group have provided verbal consent to receive SMS messages regarding weekly tee time coordination from this service.</p>
         <h2>Details</h2>
         <ul>
-          <li><strong>Group:</strong> Wigwam Degenerates Sunday Golf Group</li>
+          <li><strong>Group:</strong> Sunday Golf Group</li>
           <li><strong>Consent collected by:</strong> Jay McNallie</li>
-          <li><strong>Date:</strong>11/30/2025</li>
+          <li><strong>Date:</strong> November 30, 2025</li>
           <li><strong>Number of members:</strong> 20</li>
         </ul>
         <h2>Purpose</h2>
