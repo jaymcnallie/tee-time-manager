@@ -121,6 +121,66 @@ async function handleManagerMessage(body, twiml) {
     }
     return;
   }
+
+  if (command.startsWith('remove ')) {
+    // Format: "remove Name" or "remove 5551234567"
+    const target = body.slice(7).trim();
+
+    // Try to find by phone first
+    let phone = target.replace(/\D/g, '');
+    if (phone.length === 10) phone = '1' + phone;
+    if (phone.length === 11) phone = '+' + phone;
+
+    let golfer = db.getGolferByPhone.get(phone);
+
+    // If not found by phone, try by name
+    if (!golfer) {
+      const golfers = db.getAllActiveGolfers.all();
+      golfer = golfers.find(g => g.name.toLowerCase() === target.toLowerCase());
+    }
+
+    if (golfer) {
+      db.deactivateGolfer.run(golfer.id);
+      twiml.message(`Removed ${golfer.name}`);
+    } else {
+      twiml.message(`Golfer not found: ${target}`);
+    }
+    return;
+  }
+
+  if (command.startsWith('update ')) {
+    // Format: "update OldPhone NewPhone" or "update Name NewPhone"
+    const match = body.match(/^update\s+(.+?)\s+(\+?1?\d{10,11})$/i);
+    if (match) {
+      const target = match[1].trim();
+      let newPhone = match[2].replace(/\D/g, '');
+      if (newPhone.length === 10) newPhone = '1' + newPhone;
+      newPhone = '+' + newPhone;
+
+      // Try to find by old phone
+      let oldPhone = target.replace(/\D/g, '');
+      if (oldPhone.length === 10) oldPhone = '1' + oldPhone;
+      if (oldPhone.length === 11) oldPhone = '+' + oldPhone;
+
+      let golfer = db.getGolferByPhone.get(oldPhone);
+
+      // If not found by phone, try by name
+      if (!golfer) {
+        const golfers = db.getAllActiveGolfers.all();
+        golfer = golfers.find(g => g.name.toLowerCase() === target.toLowerCase());
+      }
+
+      if (golfer) {
+        db.updateGolferPhone.run(newPhone, golfer.id);
+        twiml.message(`Updated ${golfer.name}: ${newPhone}`);
+      } else {
+        twiml.message(`Golfer not found: ${target}`);
+      }
+    } else {
+      twiml.message('Format: update Name NewPhone');
+    }
+    return;
+  }
   
   if (command === 'help') {
     twiml.message(
