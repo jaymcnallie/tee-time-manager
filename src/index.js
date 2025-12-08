@@ -3,7 +3,7 @@ require('dotenv').config();
 console.log('Starting app...');
 console.log('TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
 console.log('TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
-console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE);
+console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE || '').split(',').map(p => p.trim());
 
 const express = require('express');
 console.log('Express loaded');
@@ -27,7 +27,7 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-const MANAGER_PHONE = process.env.MANAGER_PHONE;
+const MANAGER_PHONES = (process.env.MANAGER_PHONE || '').split(',').map(p => p.trim());
 
 /**
  * Main SMS webhook - handles all incoming messages
@@ -42,7 +42,7 @@ app.post('/sms', async (req, res) => {
   
   try {
     // Check if this is from the manager
-    if (from === MANAGER_PHONE) {
+    if (MANAGER_PHONES.includes(from)) {
       await handleManagerMessage(body, twiml);
     } else {
       await handleGolferMessage(from, body, twiml);
