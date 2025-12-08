@@ -53,6 +53,8 @@ const createEvent = db.prepare('INSERT INTO events (date, course, times) VALUES 
 const getActiveEvent = db.prepare("SELECT * FROM events WHERE status = 'open' ORDER BY created_at DESC LIMIT 1");
 const closeEvent = db.prepare("UPDATE events SET status = 'closed' WHERE id = ?");
 const getEventById = db.prepare('SELECT * FROM events WHERE id = ?');
+const deactivateGolfer = db.prepare('UPDATE golfers SET active = 0 WHERE id = ?');
+const updateGolferPhone = db.prepare('UPDATE golfers SET phone = ? WHERE id = ?');
 
 // Response queries
 const upsertResponse = db.prepare(`
@@ -107,6 +109,8 @@ module.exports = {
   getGolferByPhone,
   getAllActiveGolfers,
   updateGolferName,
+  updateGolferPhone,
+  deactivateGolfer,
   createEvent,
   getActiveEvent,
   closeEvent,

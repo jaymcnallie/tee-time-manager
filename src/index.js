@@ -73,6 +73,20 @@ async function handleManagerMessage(body, twiml) {
   // Check for admin commands
   const command = body.trim().toLowerCase();
   
+  if (command === 'commands') {
+    twiml.message(
+      'Commands:\n' +
+      '• Golf announcement to create event\n' +
+      '• STATUS - current event summary\n' +
+      '• CLOSED - send summary & close event\n' +
+      '• LIST - all golfers\n' +
+      '• ADD Name Phone\n' +
+      '• REMOVE Name or Phone\n' +
+      '• UPDATE Name NewPhone'
+    );
+    return;
+  }
+
   if (command === 'status') {
     const event = db.getActiveEvent.get();
     if (event) {
