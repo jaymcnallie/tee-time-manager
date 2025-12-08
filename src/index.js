@@ -140,12 +140,22 @@ async function handleManagerMessage(body, twiml) {
 /**
  * Handle messages from golfers
  */
+/**
+ * Handle messages from golfers
+ */
 async function handleGolferMessage(from, body, twiml) {
-  // Get or create golfer
+  const command = body.trim().toLowerCase();
+  
+  // Handle opt-in
+  if (command === 'start' || command === 'subscribe' || command === 'join') {
+    twiml.message('You have opted-in to receive weekly messages regarding Wigwam Degenerates Sunday Golf Group tee times. If you wish to opt-out, reply STOP at any time.');
+    return;
+  }
+  
+  // Get golfer
   let golfer = db.getGolferByPhone.get(from);
   
   if (!golfer) {
-    // Unknown number - could add auto-registration or just ignore
     twiml.message('Your number is not registered. Contact the group manager.');
     return;
   }
@@ -154,19 +164,15 @@ async function handleGolferMessage(from, body, twiml) {
   const event = db.getActiveEvent.get();
   
   if (!event) {
-    // No active event - forward to manager
     await forwardToManager(golfer, body);
     twiml.message('No active event. Your message has been forwarded to the group manager.');
     return;
   }
   
   // Check if we're past Friday (forward mode)
-  const eventDate = new Date(event.date);
   const now = new Date();
   const dayOfWeek = now.getDay();
   
-  // If it's Saturday (6) or Sunday (0) for this event's week, forward to manager
-  // Simple check: if event is this week's Sunday and today is Sat/Sun
   if (dayOfWeek === 0 || dayOfWeek === 6) {
     await forwardToManager(golfer, body);
     twiml.message('Response window closed. Your message has been forwarded to the group manager.');
@@ -194,30 +200,32 @@ app.get('/consent', (req, res) => {
     <!DOCTYPE html>
     <html>
       <head>
-        <title>SMS Consent - Sunday Golf Group</title>
+        <title>SMS Consent - Wigwam Degenerates Sunday Golf Group</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
       </head>
       <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; line-height: 1.6;">
-        <h1>SMS Consent Record</h1>
-        <p>All members of the Wigwam Degenerates Sunday Golf Group have provided verbal consent to receive SMS messages regarding weekly tee time coordination from this service.</p>
-        <h2>Details</h2>
-        <ul>
-          <li><strong>Group:</strong> Wigwam Degenerates Sunday Golf Group</li>
-          <li><strong>Consent collected by:</strong> Jay McNallie</li>
-          <li><strong>Date:</strong>11/30/2025</li>
-          <li><strong>Number of members:</strong> 20</li>
-        </ul>
-        <h2>Purpose</h2>
-        <p>Messages sent through this service are limited to:</p>
+        <h1>SMS Consent</h1>
+        <h2>Wigwam Degenerates Sunday Golf Group</h2>
+        
+        <h3>How to Opt-In</h3>
+        <p>To receive weekly tee time announcements, text <strong>START</strong> to <strong>(833) 605-9430</strong>.</p>
+        
+        <h3>What You'll Receive</h3>
         <ul>
           <li>Weekly tee time announcements (sent Wednesdays)</li>
           <li>RSVP confirmations</li>
           <li>Waitlist notifications</li>
         </ul>
-        <h2>Opt-Out</h2>
-        <p>Members may reply <strong>STOP</strong> at any time to unsubscribe from all messages.</p>
-        <h2>Contact</h2>
-        <p>For questions about this service, contact Jay McNallie.</p>
+        <p>Message frequency: Approximately 2-4 messages per week. Message and data rates may apply.</p>
+        
+        <h3>How to Opt-Out</h3>
+        <p>Reply <strong>STOP</strong> at any time to unsubscribe from all messages.</p>
+        
+        <h3>Help</h3>
+        <p>Reply <strong>HELP</strong> for assistance or contact Jay McNallie.</p>
+        
+        <h3>Privacy</h3>
+        <p>Your phone number will only be used for golf group coordination and will not be shared with third parties.</p>
       </body>
     </html>
   `);
