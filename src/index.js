@@ -3,7 +3,7 @@ require('dotenv').config();
 console.log('Starting app...');
 console.log('TWILIO_ACCOUNT_SID exists:', !!process.env.TWILIO_ACCOUNT_SID);
 console.log('TWILIO_AUTH_TOKEN exists:', !!process.env.TWILIO_AUTH_TOKEN);
-console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE || '').split(',').map(p => p.trim());
+console.log('MANAGER_PHONE:', process.env.MANAGER_PHONE);
 
 const express = require('express');
 console.log('Express loaded');
