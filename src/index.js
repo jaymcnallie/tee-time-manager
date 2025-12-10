@@ -43,7 +43,7 @@ app.post('/sms', async (req, res) => {
   try {
     // Check if this is from the manager
     if (MANAGER_PHONES.includes(from)) {
-      await handleManagerMessage(body, twiml);
+      await handleManagerMessage(from, body, twiml);
     } else {
       await handleGolferMessage(from, body, twiml);
     }
@@ -59,7 +59,7 @@ app.post('/sms', async (req, res) => {
 /**
  * Handle messages from the group manager
  */
-async function handleManagerMessage(body, twiml) {
+async function handleManagerMessage(fromt, body, twiml) {
   // Try to parse as announcement
   const announcement = parseManagerAnnouncement(body);
   
@@ -205,6 +205,21 @@ async function handleManagerMessage(body, twiml) {
       '• LIST - all golfers\n' +
       '• ADD Name Phone - add golfer'
     );
+    return;
+  }
+
+  // Allow manager to respond IN/OUT like a regular golfer
+  if (command === 'in' || command === 'out') {
+    const golfer = db.getGolferByPhone.get(MANAGER_PHONES[0]); // or pass the actual 'from' number
+    if (golfer) {
+      const event = db.getActiveEvent.get();
+      if (event) {
+        const result = await recordResponse(golfer, event.id, command);
+        twiml.message(result.message);
+        return;
+      }
+    }
+    twiml.message('No active event.');
     return;
   }
   
