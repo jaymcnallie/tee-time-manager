@@ -724,6 +724,86 @@ header h1 {
   padding: 12px;
 }
 
+/* Guests */
+.guests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.guest-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  gap: 12px;
+}
+
+.guest-item .guest-name {
+  flex: 1;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.guest-item .guest-name:hover {
+  background: var(--border);
+}
+
+.guest-item .guest-host {
+  font-size: 13px;
+  color: var(--text-light);
+}
+
+.guest-item .guest-edit-input {
+  flex: 1;
+  padding: 8px;
+  font-size: 15px;
+  border: 2px solid var(--primary);
+  border-radius: 6px;
+  outline: none;
+}
+
+.guest-item .guest-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.guest-item .guest-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.guest-item .guest-btn.save {
+  background: var(--primary);
+  color: white;
+}
+
+.guest-item .guest-btn.cancel {
+  background: var(--border);
+  color: var(--text);
+}
+
+.guest-item .guest-btn.delete {
+  background: var(--danger);
+  color: white;
+}
+
+/* Guest chip styling in player pool */
+.player-chip.guest {
+  background: var(--warning);
+}
+
+.player-chip.guest::before {
+  content: '';
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   :root {

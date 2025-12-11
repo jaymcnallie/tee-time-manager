@@ -64,20 +64,50 @@ function formatTime(raw) {
 
 /**
  * Parse golfer response: "in", "out", "I'm in", "yes", "no", etc.
+ * Also handles guest responses like "in +1", "in plus guest", "in + 2"
+ * Returns: { status: 'in'|'out', guests: number } or null
  */
 function parseGolferResponse(text) {
   const cleaned = text.toLowerCase().trim();
-  
-  // Check for "in" responses
-  if (/^(in|i'm in|im in|yes|y|count me in|i am in)$/i.test(cleaned)) {
-    return 'in';
+
+  // Check for "in" responses with possible guests
+  // Patterns: "in +1", "in plus 1", "in + guest", "in plus guest", "in +2", "in plus 2 guests"
+  const inWithGuestMatch = cleaned.match(
+    /^(in|i'm in|im in|yes|y|count me in|i am in)\s*[\+plus]*\s*(\d+|a|one|two|three)?\s*(guest|guests)?$/i
+  );
+
+  if (inWithGuestMatch) {
+    let guests = 0;
+    const guestPart = inWithGuestMatch[2];
+
+    if (guestPart) {
+      if (guestPart === 'a' || guestPart === 'one' || guestPart === '1') {
+        guests = 1;
+      } else if (guestPart === 'two' || guestPart === '2') {
+        guests = 2;
+      } else if (guestPart === 'three' || guestPart === '3') {
+        guests = 3;
+      } else {
+        guests = parseInt(guestPart, 10) || 1;
+      }
+    } else if (inWithGuestMatch[3]) {
+      // Just "in plus guest" without a number
+      guests = 1;
+    }
+
+    return { status: 'in', guests };
   }
-  
+
+  // Simple "in" responses (no guests)
+  if (/^(in|i'm in|im in|yes|y|count me in|i am in)$/i.test(cleaned)) {
+    return { status: 'in', guests: 0 };
+  }
+
   // Check for "out" responses
   if (/^(out|i'm out|im out|no|n|count me out|i am out|can't make it|cant make it)$/i.test(cleaned)) {
-    return 'out';
+    return { status: 'out', guests: 0 };
   }
-  
+
   return null;
 }
 

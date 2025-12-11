@@ -40,6 +40,17 @@ db.exec(`
     FOREIGN KEY (golfer_id) REFERENCES golfers(id),
     UNIQUE(event_id, golfer_id)
   );
+
+  CREATE TABLE IF NOT EXISTS guests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    host_golfer_id INTEGER NOT NULL,
+    name TEXT DEFAULT 'Guest',
+    position INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (event_id) REFERENCES events(id),
+    FOREIGN KEY (host_golfer_id) REFERENCES golfers(id)
+  );
 `);
 
 // Golfer queries
@@ -103,6 +114,36 @@ const updatePosition = db.prepare('UPDATE responses SET position = ? WHERE id = 
 
 const removeResponse = db.prepare('DELETE FROM responses WHERE event_id = ? AND golfer_id = ?');
 
+// Guest queries
+const addGuest = db.prepare('INSERT INTO guests (event_id, host_golfer_id, name, position) VALUES (?, ?, ?, ?)');
+
+const getGuestsForEvent = db.prepare(`
+  SELECT g.*, h.name as host_name
+  FROM guests g
+  JOIN golfers h ON g.host_golfer_id = h.id
+  WHERE g.event_id = ?
+  ORDER BY g.position ASC
+`);
+
+const getGuestsByHost = db.prepare(`
+  SELECT * FROM guests
+  WHERE event_id = ? AND host_golfer_id = ?
+`);
+
+const updateGuestName = db.prepare('UPDATE guests SET name = ? WHERE id = ?');
+
+const updateGuestPosition = db.prepare('UPDATE guests SET position = ? WHERE id = ?');
+
+const deleteGuest = db.prepare('DELETE FROM guests WHERE id = ?');
+
+const deleteGuestsByHost = db.prepare('DELETE FROM guests WHERE event_id = ? AND host_golfer_id = ?');
+
+const getGuestById = db.prepare('SELECT * FROM guests WHERE id = ?');
+
+const getGuestCountForEvent = db.prepare(`
+  SELECT COUNT(*) as count FROM guests WHERE event_id = ?
+`);
+
 module.exports = {
   db,
   addGolfer,
@@ -122,5 +163,15 @@ module.exports = {
   getResponseByGolferAndEvent,
   getFirstWaitlisted,
   updatePosition,
-  removeResponse
+  removeResponse,
+  // Guest exports
+  addGuest,
+  getGuestsForEvent,
+  getGuestsByHost,
+  updateGuestName,
+  updateGuestPosition,
+  deleteGuest,
+  deleteGuestsByHost,
+  getGuestById,
+  getGuestCountForEvent
 };

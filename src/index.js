@@ -278,14 +278,14 @@ async function handleGolferMessage(from, body, twiml) {
   
   // Try to parse response
   const response = parseGolferResponse(body);
-  
+
   if (!response) {
     twiml.message('Reply IN or OUT');
     return;
   }
-  
-  // Record the response
-  const result = await recordResponse(golfer, event.id, response);
+
+  // Record the response (with guest count if applicable)
+  const result = await recordResponse(golfer, event.id, response.status, response.guests);
   twiml.message(result.message);
 }
 

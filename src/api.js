@@ -224,8 +224,20 @@ router.get('/event/for-groupings', (req, res) => {
   }
 
   const responses = db.getResponsesForEvent.all(event.id);
-  const confirmed = responses
+  const guests = db.getGuestsForEvent.all(event.id);
+
+  // Combine confirmed golfers and guests
+  const confirmedGolfers = responses
     .filter(r => r.status === 'in' && r.position <= MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(r => ({ ...r, type: 'golfer' }));
+
+  const confirmedGuests = guests
+    .filter(g => g.position <= MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(g => ({ ...g, type: 'guest' }));
+
+  const confirmed = [...confirmedGolfers, ...confirmedGuests]
     .sort((a, b) => a.position - b.position);
 
   res.json({ event, confirmed });
@@ -380,6 +392,59 @@ router.delete('/golfers/:id', (req, res) => {
   }
 });
 
+/**
+ * Get all guests for current event
+ */
+router.get('/guests', (req, res) => {
+  let event = db.getActiveEvent.get();
+  if (!event) {
+    event = db.db.prepare(
+      "SELECT * FROM events WHERE status = 'closed' ORDER BY created_at DESC LIMIT 1"
+    ).get();
+  }
+
+  if (!event) {
+    return res.json([]);
+  }
+
+  const guests = db.getGuestsForEvent.all(event.id);
+  res.json(guests);
+});
+
+/**
+ * Update a guest's name
+ */
+router.put('/guests/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.json({ success: false, error: 'Name is required' });
+    }
+
+    db.updateGuestName.run(name.trim(), id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update guest error:', err);
+    res.json({ success: false, error: 'Failed to update guest' });
+  }
+});
+
+/**
+ * Delete a guest
+ */
+router.delete('/guests/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    db.deleteGuest.run(id);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete guest error:', err);
+    res.json({ success: false, error: 'Failed to delete guest' });
+  }
+});
+
 // Helper functions
 function normalizePhone(input) {
   if (!input) return null;
@@ -391,14 +456,37 @@ function normalizePhone(input) {
 
 function getEventStatusData(event) {
   const responses = db.getResponsesForEvent.all(event.id);
+  const guests = db.getGuestsForEvent.all(event.id);
   const allGolfers = db.getAllActiveGolfers.all();
 
-  const confirmed = responses
+  // Confirmed golfers
+  const confirmedGolfers = responses
     .filter(r => r.status === 'in' && r.position <= MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(r => ({ ...r, type: 'golfer' }));
+
+  // Confirmed guests
+  const confirmedGuests = guests
+    .filter(g => g.position <= MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(g => ({ ...g, type: 'guest' }));
+
+  const confirmed = [...confirmedGolfers, ...confirmedGuests]
     .sort((a, b) => a.position - b.position);
 
-  const waitlist = responses
+  // Waitlist golfers
+  const waitlistGolfers = responses
     .filter(r => r.status === 'in' && r.position > MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(r => ({ ...r, type: 'golfer' }));
+
+  // Waitlist guests
+  const waitlistGuests = guests
+    .filter(g => g.position > MAX_PLAYERS)
+    .sort((a, b) => a.position - b.position)
+    .map(g => ({ ...g, type: 'guest' }));
+
+  const waitlist = [...waitlistGolfers, ...waitlistGuests]
     .sort((a, b) => a.position - b.position);
 
   const out = responses.filter(r => r.status === 'out');
@@ -406,7 +494,7 @@ function getEventStatusData(event) {
   const respondedIds = new Set(responses.map(r => r.golfer_id));
   const noResponse = allGolfers.filter(g => !respondedIds.has(g.id));
 
-  return { event, confirmed, waitlist, out, noResponse };
+  return { event, confirmed, waitlist, out, noResponse, guests };
 }
 
 /**

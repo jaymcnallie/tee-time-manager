@@ -653,6 +653,7 @@ async function deleteGolfer() {
 async function loadGroupings() {
   const noEventEl = document.getElementById('groupings-no-event');
   const containerEl = document.getElementById('groupings-container');
+  const guestsSection = document.getElementById('guests-section');
 
   try {
     const res = await fetch(`${API_BASE}/api/event/for-groupings`);
@@ -670,10 +671,13 @@ async function loadGroupings() {
     const { event, confirmed } = data;
     const times = JSON.parse(event.times);
 
+    // Separate golfers and guests
+    const guests = confirmed.filter(p => p.type === 'guest');
+
     document.getElementById('groupings-event-title').textContent =
       `Groupings for ${formatDateDisplay(event.date)}`;
     document.getElementById('groupings-event-info').textContent =
-      `${event.course} - ${confirmed.length} confirmed players`;
+      `${event.course} - ${confirmed.length} confirmed players${guests.length > 0 ? ` (${guests.length} guest${guests.length > 1 ? 's' : ''})` : ''}`;
 
     // Initialize groupings if empty or for different event
     if (Object.keys(groupings).length === 0) {
@@ -684,7 +688,15 @@ async function loadGroupings() {
 
     renderPlayersPool(confirmed);
     renderFoursomes(times, confirmed);
+    renderGuestsList(guests);
     updateGroupingsPreview(times, event);
+
+    // Show guests section if there are guests
+    if (guests.length > 0) {
+      guestsSection.classList.remove('hidden');
+    } else {
+      guestsSection.classList.add('hidden');
+    }
 
   } catch (err) {
     console.error('Load groupings error:', err);
@@ -701,9 +713,97 @@ function renderPlayersPool(confirmed) {
   const unassigned = confirmed.filter(p => !assignedPlayers.has(p.name));
 
   poolEl.innerHTML = unassigned.map(p => `
-    <div class="player-chip" draggable="true" data-player="${escapeHtml(p.name)}"
+    <div class="player-chip ${p.type === 'guest' ? 'guest' : ''}" draggable="true" data-player="${escapeHtml(p.name)}"
          ondragstart="handleDragStart(event)">${escapeHtml(p.name)}</div>
   `).join('') || '<span style="color: var(--text-light)">All players assigned</span>';
+}
+
+function renderGuestsList(guests) {
+  const listEl = document.getElementById('guests-list');
+
+  if (guests.length === 0) {
+    listEl.innerHTML = '<p style="color: var(--text-light)">No guests</p>';
+    return;
+  }
+
+  listEl.innerHTML = guests.map(g => `
+    <div class="guest-item" data-guest-id="${g.id}">
+      <span class="guest-name" onclick="editGuest(${g.id}, '${escapeHtml(g.name)}')">${escapeHtml(g.name)}</span>
+      <span class="guest-host">Guest of ${escapeHtml(g.host_name)}</span>
+    </div>
+  `).join('');
+}
+
+function editGuest(guestId, currentName) {
+  const item = document.querySelector(`.guest-item[data-guest-id="${guestId}"]`);
+  if (!item) return;
+
+  item.innerHTML = `
+    <input type="text" class="guest-edit-input" value="${escapeHtml(currentName)}" autofocus>
+    <div class="guest-actions">
+      <button class="guest-btn save" onclick="saveGuest(${guestId})">Save</button>
+      <button class="guest-btn cancel" onclick="loadGroupings()">Cancel</button>
+      <button class="guest-btn delete" onclick="deleteGuest(${guestId})">Delete</button>
+    </div>
+  `;
+
+  const input = item.querySelector('.guest-edit-input');
+  input.focus();
+  input.select();
+
+  // Handle Enter key
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') saveGuest(guestId);
+  });
+}
+
+async function saveGuest(guestId) {
+  const item = document.querySelector(`.guest-item[data-guest-id="${guestId}"]`);
+  const input = item.querySelector('.guest-edit-input');
+  const newName = input.value.trim();
+
+  if (!newName) {
+    showToast('Name cannot be empty', 'error');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/guests/${guestId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('Guest name updated', 'success');
+      loadGroupings();
+    } else {
+      showToast(data.error || 'Failed to update', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Save guest error:', err);
+  }
+}
+
+async function deleteGuest(guestId) {
+  if (!confirm('Remove this guest?')) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/guests/${guestId}`, { method: 'DELETE' });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('Guest removed', 'success');
+      loadGroupings();
+    } else {
+      showToast(data.error || 'Failed to remove', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Delete guest error:', err);
+  }
 }
 
 function renderFoursomes(times, confirmed) {
@@ -908,3 +1008,6 @@ window.handleDragOver = handleDragOver;
 window.handleDragLeave = handleDragLeave;
 window.handleDrop = handleDrop;
 window.simulateResponse = simulateResponse;
+window.editGuest = editGuest;
+window.saveGuest = saveGuest;
+window.deleteGuest = deleteGuest;
