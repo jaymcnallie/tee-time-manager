@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Tee Time Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Login Screen -->
+    <div id="login-screen" class="screen">
+      <div class="login-container">
+        <h1>⛳ Tee Time Manager</h1>
+        <p>Enter your phone number to access the manager dashboard</p>
+        <input type="tel" id="phone-input" placeholder="(555) 123-4567" autocomplete="tel">
+        <button id="login-btn" class="btn btn-primary">Sign In</button>
+        <p id="login-error" class="error"></p>
+      </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="screen hidden">
+      <!-- Header -->
+      <header>
+        <h1>⛳ Tee Time Manager</h1>
+        <button id="logout-btn" class="btn-icon">Logout</button>
+      </header>
+
+      <!-- Navigation Tabs -->
+      <nav class="tabs">
+        <button class="tab active" data-tab="event">Event</button>
+        <button class="tab" data-tab="golfers">Golfers</button>
+        <button class="tab" data-tab="groupings">Groupings</button>
+      </nav>
+
+      <!-- Event Tab -->
+      <section id="event-tab" class="tab-content active">
+        <!-- Current Event Status -->
+        <div id="event-status" class="card">
+          <h2>Current Event</h2>
+          <div id="event-info">
+            <p class="loading">Loading...</p>
+          </div>
+        </div>
+
+        <!-- Event Actions -->
+        <div id="event-actions" class="card hidden">
+          <h3>Quick Actions</h3>
+          <div class="action-buttons">
+            <button id="refresh-status-btn" class="btn btn-secondary">Refresh Status</button>
+            <button id="close-event-btn" class="btn btn-warning">Close Event</button>
+          </div>
+          <div id="manager-response" class="manager-response">
+            <h3>Your Response</h3>
+            <div class="response-buttons">
+              <button id="manager-in-btn" class="btn btn-success">I'm IN</button>
+              <button id="manager-out-btn" class="btn btn-danger">I'm OUT</button>
+            </div>
+            <p id="manager-response-status"></p>
+          </div>
+        </div>
+
+        <!-- Create New Event -->
+        <div id="create-event" class="card">
+          <h2>Create New Event</h2>
+          <form id="create-event-form">
+            <div class="form-group">
+              <label for="event-date">Date</label>
+              <input type="date" id="event-date" required>
+            </div>
+            <div class="form-group">
+              <label for="event-course">Course</label>
+              <input type="text" id="event-course" placeholder="e.g., Wigwam CC" required>
+            </div>
+            <div class="form-group">
+              <label for="event-times">Tee Times (comma or / separated)</label>
+              <input type="text" id="event-times" placeholder="e.g., 808, 816, 824, 832" required>
+              <small>Enter times like 808 (8:08 AM) or 1015 (10:15 AM)</small>
+            </div>
+            <button type="submit" class="btn btn-primary">Create Event & Notify Golfers</button>
+          </form>
+          <p id="create-event-result" class="result"></p>
+        </div>
+      </section>
+
+      <!-- Golfers Tab -->
+      <section id="golfers-tab" class="tab-content hidden">
+        <!-- Add Golfer -->
+        <div class="card">
+          <h2>Add Golfer</h2>
+          <form id="add-golfer-form">
+            <div class="form-row">
+              <input type="text" id="golfer-name" placeholder="Name" required>
+              <input type="tel" id="golfer-phone" placeholder="Phone" required>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Golfer</button>
+          </form>
+          <p id="add-golfer-result" class="result"></p>
+        </div>
+
+        <!-- Golfer List -->
+        <div class="card">
+          <h2>All Golfers <span id="golfer-count"></span></h2>
+          <div id="golfer-list" class="golfer-list">
+            <p class="loading">Loading...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Groupings Tab -->
+      <section id="groupings-tab" class="tab-content hidden">
+        <div id="groupings-no-event" class="card">
+          <p>No closed event available for groupings.</p>
+        </div>
+
+        <div id="groupings-container" class="hidden">
+          <div class="card">
+            <h2 id="groupings-event-title">Groupings</h2>
+            <p id="groupings-event-info"></p>
+          </div>
+
+          <!-- Confirmed Players Pool -->
+          <div class="card">
+            <h3>Confirmed Players</h3>
+            <div id="players-pool" class="players-pool"></div>
+          </div>
+
+          <!-- Foursomes -->
+          <div id="foursomes-container">
+            <!-- Dynamically generated -->
+          </div>
+
+          <!-- Send Groupings -->
+          <div class="card">
+            <h3>Send Groupings via SMS</h3>
+            <div id="groupings-preview" class="groupings-preview"></div>
+            <button id="send-groupings-btn" class="btn btn-primary" disabled>Send Groupings to All Players</button>
+            <p id="send-groupings-result" class="result"></p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Edit Golfer Modal -->
+  <div id="edit-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Edit Golfer</h2>
+      <form id="edit-golfer-form">
+        <input type="hidden" id="edit-golfer-id">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="edit-golfer-name" required>
+        </div>
+        <div class="form-group">
+          <label>Phone</label>
+          <input type="tel" id="edit-golfer-phone" required>
+        </div>
+        <div class="modal-buttons">
+          <button type="button" id="cancel-edit-btn" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="delete-golfer-btn" class="btn btn-danger">Remove</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

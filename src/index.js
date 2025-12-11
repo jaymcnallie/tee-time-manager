@@ -27,6 +27,14 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// Serve static files from public directory
+const path = require('path');
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// API routes for web app
+const apiRoutes = require('./api');
+app.use('/api', apiRoutes);
+
 const MANAGER_PHONES = (process.env.MANAGER_PHONE || '').split(',').map(p => p.trim());
 
 /**
@@ -329,7 +337,6 @@ app.get('/health', (req, res) => {
 
 // Ensure data directory exists
 const fs = require('fs');
-const path = require('path');
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
