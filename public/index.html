@@ -26,8 +26,19 @@
       <!-- Header -->
       <header>
         <h1>⛳ Tee Time Manager</h1>
-        <button id="logout-btn" class="btn-icon">Logout</button>
+        <div class="header-actions">
+          <label class="test-mode-toggle">
+            <input type="checkbox" id="test-mode-checkbox">
+            <span class="toggle-label">Test Mode</span>
+          </label>
+          <button id="logout-btn" class="btn-icon">Logout</button>
+        </div>
       </header>
+
+      <!-- Test Mode Banner -->
+      <div id="test-mode-banner" class="test-mode-banner hidden">
+        TEST MODE - No SMS messages will be sent
+      </div>
 
       <!-- Navigation Tabs -->
       <nav class="tabs">
@@ -60,6 +71,19 @@
               <button id="manager-out-btn" class="btn btn-danger">I'm OUT</button>
             </div>
             <p id="manager-response-status"></p>
+          </div>
+        </div>
+
+        <!-- Test Mode: Simulate Responses -->
+        <div id="simulate-responses" class="card hidden">
+          <h2>Simulate Responses</h2>
+          <p class="card-description">Click on golfers to simulate their IN/OUT responses</p>
+          <div id="simulate-golfer-list" class="simulate-list">
+            <!-- Dynamically generated -->
+          </div>
+          <div class="simulate-actions">
+            <button id="random-responses-btn" class="btn btn-secondary">Random Responses</button>
+            <button id="clear-responses-btn" class="btn btn-secondary">Clear All Responses</button>
           </div>
         </div>
 

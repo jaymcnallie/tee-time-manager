@@ -603,6 +603,127 @@ header h1 {
   }
 }
 
+/* Test Mode */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.test-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.test-mode-toggle input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.toggle-label {
+  color: rgba(255,255,255,0.9);
+}
+
+.test-mode-banner {
+  background: #ff9800;
+  color: white;
+  text-align: center;
+  padding: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.card-description {
+  color: var(--text-light);
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+/* Simulate Responses List */
+.simulate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.simulate-item {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  gap: 12px;
+}
+
+.simulate-item .golfer-name {
+  flex: 1;
+  font-weight: 500;
+}
+
+.simulate-item .response-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.simulate-item .sim-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.simulate-item .sim-btn.in-btn {
+  background: var(--border);
+  color: var(--text);
+}
+
+.simulate-item .sim-btn.in-btn.active {
+  background: var(--success);
+  color: white;
+}
+
+.simulate-item .sim-btn.out-btn {
+  background: var(--border);
+  color: var(--text);
+}
+
+.simulate-item .sim-btn.out-btn.active {
+  background: var(--danger);
+  color: white;
+}
+
+.simulate-item .sim-btn:hover:not(.active) {
+  background: var(--text-light);
+  color: white;
+}
+
+.simulate-item .response-status {
+  font-size: 12px;
+  color: var(--text-light);
+  min-width: 80px;
+  text-align: right;
+}
+
+.simulate-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.simulate-actions .btn {
+  flex: 1;
+  padding: 12px;
+}
+
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
   :root {

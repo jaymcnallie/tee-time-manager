@@ -57,10 +57,11 @@ router.get('/event/manager-status', (req, res) => {
 
 /**
  * Create a new event
+ * In test mode, doesn't send SMS notifications
  */
 router.post('/event/create', async (req, res) => {
   try {
-    const { date, course, times: timesRaw } = req.body;
+    const { date, course, times: timesRaw, testMode } = req.body;
 
     // Parse times from various formats
     const timesInput = timesRaw.split(/[,\/]/).map(t => t.trim()).filter(t => t);
@@ -74,8 +75,14 @@ router.post('/event/create', async (req, res) => {
     const dateObj = new Date(date + 'T12:00:00');
     const formattedDate = dateObj.toISOString().split('T')[0];
 
-    const result = await createEventAndNotify(formattedDate, course, times);
-    res.json({ success: true, eventId: result.eventId, notified: result.notified });
+    if (testMode) {
+      // In test mode, create event without sending SMS
+      const result = await createEventWithoutNotify(formattedDate, course, times);
+      res.json({ success: true, eventId: result.eventId, notified: result.notified });
+    } else {
+      const result = await createEventAndNotify(formattedDate, course, times);
+      res.json({ success: true, eventId: result.eventId, notified: result.notified });
+    }
   } catch (err) {
     console.error('Create event error:', err);
     res.json({ success: false, error: 'Failed to create event' });
@@ -122,6 +129,83 @@ router.post('/event/respond', async (req, res) => {
 });
 
 /**
+ * Simulate a golfer's response (test mode only)
+ */
+router.post('/event/simulate-response', async (req, res) => {
+  try {
+    const { golferId, status } = req.body;
+
+    const event = db.getActiveEvent.get();
+    if (!event) {
+      return res.json({ success: false, error: 'No active event' });
+    }
+
+    // Get golfer by ID
+    const golfer = db.db.prepare('SELECT * FROM golfers WHERE id = ?').get(golferId);
+    if (!golfer) {
+      return res.json({ success: false, error: 'Golfer not found' });
+    }
+
+    // Record the response without sending SMS (simulated)
+    const result = await recordResponseSilent(golfer, event.id, status);
+    res.json({ success: result.success, message: result.message });
+  } catch (err) {
+    console.error('Simulate response error:', err);
+    res.json({ success: false, error: 'Failed to simulate response' });
+  }
+});
+
+/**
+ * Generate random responses for all golfers (test mode)
+ */
+router.post('/event/random-responses', async (req, res) => {
+  try {
+    const event = db.getActiveEvent.get();
+    if (!event) {
+      return res.json({ success: false, error: 'No active event' });
+    }
+
+    const golfers = db.getAllActiveGolfers.all();
+    let inCount = 0;
+    let outCount = 0;
+
+    for (const golfer of golfers) {
+      // Random: 70% chance IN, 30% chance OUT
+      const status = Math.random() < 0.7 ? 'in' : 'out';
+      await recordResponseSilent(golfer, event.id, status);
+
+      if (status === 'in') inCount++;
+      else outCount++;
+    }
+
+    res.json({ success: true, inCount, outCount });
+  } catch (err) {
+    console.error('Random responses error:', err);
+    res.json({ success: false, error: 'Failed to generate random responses' });
+  }
+});
+
+/**
+ * Clear all responses for the current event (test mode)
+ */
+router.post('/event/clear-responses', (req, res) => {
+  try {
+    const event = db.getActiveEvent.get();
+    if (!event) {
+      return res.json({ success: false, error: 'No active event' });
+    }
+
+    // Delete all responses for this event
+    db.db.prepare('DELETE FROM responses WHERE event_id = ?').run(event.id);
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Clear responses error:', err);
+    res.json({ success: false, error: 'Failed to clear responses' });
+  }
+});
+
+/**
  * Get event data for groupings (most recent closed event or active event)
  */
 router.get('/event/for-groupings', (req, res) => {
@@ -149,10 +233,11 @@ router.get('/event/for-groupings', (req, res) => {
 
 /**
  * Send groupings via SMS
+ * In test mode, doesn't actually send SMS
  */
 router.post('/event/send-groupings', async (req, res) => {
   try {
-    const { groupings } = req.body;
+    const { groupings, testMode } = req.body;
 
     // Get most recent event (active or closed)
     let event = db.getActiveEvent.get();
@@ -202,10 +287,16 @@ router.post('/event/send-groupings', async (req, res) => {
       return res.json({ success: false, error: 'No valid phone numbers found' });
     }
 
-    // Send messages
-    const result = await sendToMany(phones, message);
-
-    res.json({ success: true, sent: result.succeeded, failed: result.failed });
+    if (testMode) {
+      // In test mode, just return success without sending
+      console.log('[TEST MODE] Would send groupings to:', phones);
+      console.log('[TEST MODE] Message:', message);
+      res.json({ success: true, sent: phones.length, failed: 0 });
+    } else {
+      // Send messages
+      const result = await sendToMany(phones, message);
+      res.json({ success: true, sent: result.succeeded, failed: result.failed });
+    }
   } catch (err) {
     console.error('Send groupings error:', err);
     res.json({ success: false, error: 'Failed to send groupings' });
@@ -316,6 +407,119 @@ function getEventStatusData(event) {
   const noResponse = allGolfers.filter(g => !respondedIds.has(g.id));
 
   return { event, confirmed, waitlist, out, noResponse };
+}
+
+/**
+ * Create event without sending SMS notifications (for test mode)
+ */
+async function createEventWithoutNotify(date, course, times) {
+  // Close any existing open events
+  const existingEvent = db.getActiveEvent.get();
+  if (existingEvent) {
+    db.closeEvent.run(existingEvent.id);
+  }
+
+  // Create new event
+  const timesStr = JSON.stringify(times);
+  const result = db.createEvent.run(date, course, timesStr);
+  const eventId = result.lastInsertRowid;
+
+  // Count how many golfers would be notified
+  const golfers = db.getAllActiveGolfers.all();
+
+  console.log(`[TEST MODE] Event ${eventId} created for ${date}, would notify ${golfers.length} golfers`);
+  return { eventId, notified: golfers.length };
+}
+
+/**
+ * Record response without sending SMS (for simulated responses)
+ */
+async function recordResponseSilent(golfer, eventId, status) {
+  const event = db.getEventById.get(eventId);
+  if (!event) {
+    return { success: false, message: 'No active event' };
+  }
+
+  // Check current response
+  const existingResponse = db.getResponseByGolferAndEvent.get(eventId, golfer.id);
+  const wasIn = existingResponse?.status === 'in';
+
+  if (status === 'in') {
+    // Get current count of confirmed players
+    const { count } = db.getInCountForEvent.get(eventId);
+
+    if (existingResponse?.status === 'in') {
+      // Already in, no change needed
+      const pos = existingResponse.position;
+      if (pos <= MAX_PLAYERS) {
+        return { success: true, message: `Already in (#${pos} of ${MAX_PLAYERS})`, position: pos };
+      } else {
+        return { success: true, message: `Already on waitlist #${pos - MAX_PLAYERS}`, position: pos };
+      }
+    }
+
+    let position;
+    if (count < MAX_PLAYERS) {
+      position = count + 1;
+    } else {
+      const { next_pos } = db.getNextWaitlistPosition.get(eventId);
+      position = next_pos;
+    }
+
+    db.upsertResponse.run(eventId, golfer.id, 'in', position);
+
+    if (position <= MAX_PLAYERS) {
+      return { success: true, message: `In (#${position} of ${MAX_PLAYERS})`, position };
+    } else {
+      const waitlistPos = position - MAX_PLAYERS;
+      return { success: true, message: `Waitlist #${waitlistPos}`, position };
+    }
+
+  } else if (status === 'out') {
+    const previousPosition = existingResponse?.position;
+
+    db.upsertResponse.run(eventId, golfer.id, 'out', null);
+
+    // If they were in the top 16, bump up waitlist (silently)
+    if (wasIn && previousPosition && previousPosition <= MAX_PLAYERS) {
+      await bumpWaitlistSilent(eventId);
+    }
+
+    return { success: true, message: "Out" };
+  }
+
+  return { success: false, message: 'Invalid status' };
+}
+
+/**
+ * Bump waitlist without sending SMS notification
+ */
+async function bumpWaitlistSilent(eventId) {
+  const waitlisted = db.getFirstWaitlisted.get(eventId);
+  if (!waitlisted) {
+    return null;
+  }
+
+  // Find the next available position in top 16
+  const responses = db.getResponsesForEvent.all(eventId);
+  const takenPositions = new Set(
+    responses
+      .filter(r => r.status === 'in' && r.position <= MAX_PLAYERS)
+      .map(r => r.position)
+  );
+
+  let newPosition = 1;
+  while (takenPositions.has(newPosition) && newPosition <= MAX_PLAYERS) {
+    newPosition++;
+  }
+
+  if (newPosition <= MAX_PLAYERS) {
+    db.updatePosition.run(newPosition, waitlisted.id);
+    console.log(`[SILENT] Bumped ${waitlisted.name} from waitlist to position ${newPosition}`);
+    return waitlisted;
+  }
+
+  return null;
 }
 
 module.exports = router;

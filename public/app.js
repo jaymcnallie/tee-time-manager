@@ -6,6 +6,8 @@ let currentPhone = localStorage.getItem('managerPhone') || '';
 let currentEvent = null;
 let golfers = [];
 let groupings = {}; // { teeTime: [player1, player2, ...] }
+let testMode = localStorage.getItem('testMode') === 'true';
+let eventResponses = {}; // Track responses in current view { golferId: { status, position } }
 
 // DOM Elements
 const loginScreen = document.getElementById('login-screen');
@@ -18,6 +20,12 @@ const logoutBtn = document.getElementById('logout-btn');
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+
+  // Restore test mode state
+  const testModeCheckbox = document.getElementById('test-mode-checkbox');
+  testModeCheckbox.checked = testMode;
+  updateTestModeUI();
+
   if (currentPhone) {
     verifyAndLogin(currentPhone);
   }
@@ -30,6 +38,9 @@ function setupEventListeners() {
     if (e.key === 'Enter') handleLogin();
   });
   logoutBtn.addEventListener('click', handleLogout);
+
+  // Test mode toggle
+  document.getElementById('test-mode-checkbox').addEventListener('change', toggleTestMode);
 
   // Tabs
   document.querySelectorAll('.tab').forEach(tab => {
@@ -44,6 +55,10 @@ function setupEventListeners() {
   // Manager response
   document.getElementById('manager-in-btn').addEventListener('click', () => managerRespond('in'));
   document.getElementById('manager-out-btn').addEventListener('click', () => managerRespond('out'));
+
+  // Test mode: simulate responses
+  document.getElementById('random-responses-btn').addEventListener('click', randomResponses);
+  document.getElementById('clear-responses-btn').addEventListener('click', clearAllResponses);
 
   // Golfers
   document.getElementById('add-golfer-form').addEventListener('submit', addGolfer);
@@ -63,6 +78,171 @@ function setupEventListeners() {
   const nextSunday = new Date(today);
   nextSunday.setDate(today.getDate() + daysUntilSunday);
   dateInput.value = nextSunday.toISOString().split('T')[0];
+}
+
+// Test Mode
+function toggleTestMode() {
+  testMode = document.getElementById('test-mode-checkbox').checked;
+  localStorage.setItem('testMode', testMode);
+  updateTestModeUI();
+
+  if (testMode) {
+    showToast('Test Mode enabled - No SMS will be sent', 'success');
+  } else {
+    showToast('Test Mode disabled - SMS will be sent', '');
+  }
+}
+
+function updateTestModeUI() {
+  const banner = document.getElementById('test-mode-banner');
+  const simulateSection = document.getElementById('simulate-responses');
+
+  if (testMode) {
+    banner.classList.remove('hidden');
+    if (currentEvent) {
+      simulateSection.classList.remove('hidden');
+      loadSimulateList();
+    }
+  } else {
+    banner.classList.add('hidden');
+    simulateSection.classList.add('hidden');
+  }
+}
+
+async function loadSimulateList() {
+  if (!currentEvent || !testMode) return;
+
+  const listEl = document.getElementById('simulate-golfer-list');
+
+  try {
+    // Get all golfers and current responses
+    const [golfersRes, statusRes] = await Promise.all([
+      fetch(`${API_BASE}/api/golfers`),
+      fetch(`${API_BASE}/api/event/status`)
+    ]);
+
+    const allGolfers = await golfersRes.json();
+    const statusData = await statusRes.json();
+
+    // Build response map
+    eventResponses = {};
+    if (statusData.confirmed) {
+      statusData.confirmed.forEach(r => {
+        eventResponses[r.golfer_id] = { status: 'in', position: r.position };
+      });
+    }
+    if (statusData.waitlist) {
+      statusData.waitlist.forEach(r => {
+        eventResponses[r.golfer_id] = { status: 'in', position: r.position };
+      });
+    }
+    if (statusData.out) {
+      statusData.out.forEach(r => {
+        eventResponses[r.golfer_id] = { status: 'out', position: null };
+      });
+    }
+
+    listEl.innerHTML = allGolfers.map(g => {
+      const response = eventResponses[g.id];
+      const isIn = response?.status === 'in';
+      const isOut = response?.status === 'out';
+      let statusText = '';
+
+      if (isIn) {
+        statusText = response.position <= 16
+          ? `#${response.position} of 16`
+          : `Waitlist #${response.position - 16}`;
+      } else if (isOut) {
+        statusText = 'Out';
+      }
+
+      return `
+        <div class="simulate-item" data-golfer-id="${g.id}">
+          <span class="golfer-name">${escapeHtml(g.name)}</span>
+          <div class="response-btns">
+            <button class="sim-btn in-btn ${isIn ? 'active' : ''}"
+                    onclick="simulateResponse(${g.id}, 'in')">IN</button>
+            <button class="sim-btn out-btn ${isOut ? 'active' : ''}"
+                    onclick="simulateResponse(${g.id}, 'out')">OUT</button>
+          </div>
+          <span class="response-status">${statusText}</span>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error loading simulate list:', err);
+    listEl.innerHTML = '<p class="error">Failed to load golfers</p>';
+  }
+}
+
+async function simulateResponse(golferId, status) {
+  try {
+    const res = await fetch(`${API_BASE}/api/event/simulate-response`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ golferId, status })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // Refresh the UI
+      await loadEventStatus();
+      loadSimulateList();
+    } else {
+      showToast(data.error || 'Failed to simulate response', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Simulate response error:', err);
+  }
+}
+
+async function randomResponses() {
+  if (!currentEvent) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/api/event/random-responses`, {
+      method: 'POST'
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(`Generated ${data.inCount} IN, ${data.outCount} OUT responses`, 'success');
+      await loadEventStatus();
+      loadSimulateList();
+    } else {
+      showToast(data.error || 'Failed to generate responses', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Random responses error:', err);
+  }
+}
+
+async function clearAllResponses() {
+  if (!currentEvent) return;
+
+  if (!confirm('Clear all responses for this event?')) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/event/clear-responses`, {
+      method: 'POST'
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast('All responses cleared', 'success');
+      await loadEventStatus();
+      loadSimulateList();
+    } else {
+      showToast(data.error || 'Failed to clear responses', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Clear responses error:', err);
+  }
 }
 
 // Login/Logout
@@ -131,6 +311,7 @@ function switchTab(tabName) {
 async function loadEventStatus() {
   const eventInfo = document.getElementById('event-info');
   const eventActions = document.getElementById('event-actions');
+  const simulateSection = document.getElementById('simulate-responses');
 
   try {
     const res = await fetch(`${API_BASE}/api/event/status`);
@@ -143,10 +324,17 @@ async function loadEventStatus() {
 
       // Check manager's current response
       loadManagerResponse();
+
+      // Show simulate section in test mode
+      if (testMode) {
+        simulateSection.classList.remove('hidden');
+        loadSimulateList();
+      }
     } else {
       currentEvent = null;
       eventInfo.innerHTML = '<p>No active event. Create one below.</p>';
       eventActions.classList.add('hidden');
+      simulateSection.classList.add('hidden');
     }
   } catch (err) {
     eventInfo.innerHTML = '<p class="error">Failed to load event status</p>';
@@ -242,14 +430,21 @@ async function createEvent(e) {
     const res = await fetch(`${API_BASE}/api/event/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date, course, times: timesRaw })
+      body: JSON.stringify({ date, course, times: timesRaw, testMode })
     });
     const data = await res.json();
 
     if (data.success) {
-      resultEl.textContent = `Event created! Notified ${data.notified} golfers.`;
+      const notifyMsg = testMode
+        ? `Event created! (Test mode: ${data.notified} golfers would be notified)`
+        : `Event created! Notified ${data.notified} golfers.`;
+      resultEl.textContent = notifyMsg;
       resultEl.className = 'result success';
-      showToast(`Event created! ${data.notified} golfers notified`, 'success');
+      showToast(notifyMsg, 'success');
+
+      // Reset groupings for new event
+      groupings = {};
+
       loadEventStatus();
 
       // Clear form
@@ -366,6 +561,11 @@ async function addGolfer(e) {
       document.getElementById('golfer-name').value = '';
       document.getElementById('golfer-phone').value = '';
       loadGolfers();
+
+      // Refresh simulate list if in test mode
+      if (testMode && currentEvent) {
+        loadSimulateList();
+      }
     } else {
       resultEl.textContent = data.error || 'Failed to add golfer';
       resultEl.className = 'result error';
@@ -475,7 +675,7 @@ async function loadGroupings() {
     document.getElementById('groupings-event-info').textContent =
       `${event.course} - ${confirmed.length} confirmed players`;
 
-    // Initialize groupings if empty
+    // Initialize groupings if empty or for different event
     if (Object.keys(groupings).length === 0) {
       times.forEach(time => {
         groupings[time] = [];
@@ -615,29 +815,41 @@ function updateSendButton() {
   const btn = document.getElementById('send-groupings-btn');
   const hasGroupings = Object.values(groupings).some(g => g.filter(p => p).length > 0);
   btn.disabled = !hasGroupings;
+
+  // Update button text based on test mode
+  btn.textContent = testMode
+    ? 'Preview Send (Test Mode)'
+    : 'Send Groupings to All Players';
 }
 
 async function sendGroupings() {
-  if (!confirm('Send groupings to all assigned players via SMS?')) {
+  const confirmMsg = testMode
+    ? 'Preview sending groupings? (No SMS will be sent in test mode)'
+    : 'Send groupings to all assigned players via SMS?';
+
+  if (!confirm(confirmMsg)) {
     return;
   }
 
   const resultEl = document.getElementById('send-groupings-result');
-  resultEl.textContent = 'Sending...';
+  resultEl.textContent = testMode ? 'Simulating send...' : 'Sending...';
   resultEl.className = 'result';
 
   try {
     const res = await fetch(`${API_BASE}/api/event/send-groupings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ groupings })
+      body: JSON.stringify({ groupings, testMode })
     });
     const data = await res.json();
 
     if (data.success) {
-      resultEl.textContent = `Sent groupings to ${data.sent} players!`;
+      const msg = testMode
+        ? `Test mode: Would send to ${data.sent} players`
+        : `Sent groupings to ${data.sent} players!`;
+      resultEl.textContent = msg;
       resultEl.className = 'result success';
-      showToast(`Groupings sent to ${data.sent} players`, 'success');
+      showToast(msg, 'success');
     } else {
       resultEl.textContent = data.error || 'Failed to send';
       resultEl.className = 'result error';
@@ -695,3 +907,4 @@ window.handleDragStart = handleDragStart;
 window.handleDragOver = handleDragOver;
 window.handleDragLeave = handleDragLeave;
 window.handleDrop = handleDrop;
+window.simulateResponse = simulateResponse;
