@@ -49,6 +49,7 @@ function setupEventListeners() {
 
   // Event actions
   document.getElementById('refresh-status-btn').addEventListener('click', loadEventStatus);
+  document.getElementById('notify-backups-btn').addEventListener('click', notifyBackups);
   document.getElementById('close-event-btn').addEventListener('click', closeEvent);
   document.getElementById('create-event-form').addEventListener('submit', createEvent);
 
@@ -67,6 +68,9 @@ function setupEventListeners() {
   document.getElementById('cancel-edit-btn').addEventListener('click', closeEditModal);
   document.getElementById('delete-golfer-btn').addEventListener('click', deleteGolfer);
   document.getElementById('edit-golfer-form').addEventListener('submit', updateGolfer);
+
+  // Message preview modal
+  document.getElementById('close-message-modal-btn').addEventListener('click', closeMessageModal);
 
   // Groupings
   document.getElementById('send-groupings-btn').addEventListener('click', sendGroupings);
@@ -128,17 +132,21 @@ async function loadSimulateList() {
     eventResponses = {};
     if (statusData.confirmed) {
       statusData.confirmed.forEach(r => {
-        eventResponses[r.golfer_id] = { status: 'in', position: r.position };
+        if (r.type === 'golfer') {
+          eventResponses[r.golfer_id] = { status: 'in', position: r.position, guests: r.guests || 0 };
+        }
       });
     }
     if (statusData.waitlist) {
       statusData.waitlist.forEach(r => {
-        eventResponses[r.golfer_id] = { status: 'in', position: r.position };
+        if (r.type === 'golfer') {
+          eventResponses[r.golfer_id] = { status: 'in', position: r.position, guests: r.guests || 0 };
+        }
       });
     }
     if (statusData.out) {
       statusData.out.forEach(r => {
-        eventResponses[r.golfer_id] = { status: 'out', position: null };
+        eventResponses[r.golfer_id] = { status: 'out', position: null, guests: 0 };
       });
     }
 
@@ -146,24 +154,33 @@ async function loadSimulateList() {
       const response = eventResponses[g.id];
       const isIn = response?.status === 'in';
       const isOut = response?.status === 'out';
+      const guestCount = response?.guests || 0;
+      const isBackup = g.tier === 'backup';
       let statusText = '';
 
       if (isIn) {
         statusText = response.position <= 16
           ? `#${response.position} of 16`
           : `Waitlist #${response.position - 16}`;
+        if (guestCount > 0) {
+          statusText += ` +${guestCount}`;
+        }
       } else if (isOut) {
         statusText = 'Out';
       }
 
       return `
         <div class="simulate-item" data-golfer-id="${g.id}">
-          <span class="golfer-name">${escapeHtml(g.name)}</span>
+          <span class="golfer-name">${escapeHtml(g.name)}${isBackup ? ' <span class="tier-badge backup">backup</span>' : ''}</span>
           <div class="response-btns">
             <button class="sim-btn in-btn ${isIn ? 'active' : ''}"
-                    onclick="simulateResponse(${g.id}, 'in')">IN</button>
+                    onclick="simulateResponse(${g.id}, 'in', 0)">IN</button>
+            ${!isBackup ? `
+            <button class="sim-btn in-guest-btn ${isIn && guestCount > 0 ? 'active' : ''}"
+                    onclick="showGuestPicker(${g.id})">+Guest</button>
+            ` : ''}
             <button class="sim-btn out-btn ${isOut ? 'active' : ''}"
-                    onclick="simulateResponse(${g.id}, 'out')">OUT</button>
+                    onclick="simulateResponse(${g.id}, 'out', 0)">OUT</button>
           </div>
           <span class="response-status">${statusText}</span>
         </div>
@@ -175,12 +192,12 @@ async function loadSimulateList() {
   }
 }
 
-async function simulateResponse(golferId, status) {
+async function simulateResponse(golferId, status, guests = 0) {
   try {
     const res = await fetch(`${API_BASE}/api/event/simulate-response`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ golferId, status })
+      body: JSON.stringify({ golferId, status, guests })
     });
     const data = await res.json();
 
@@ -195,6 +212,26 @@ async function simulateResponse(golferId, status) {
     showToast('Connection error', 'error');
     console.error('Simulate response error:', err);
   }
+}
+
+function showGuestPicker(golferId) {
+  const currentGuests = eventResponses[golferId]?.guests || 0;
+  const guestCount = prompt(`How many guests? (Currently: ${currentGuests})`, currentGuests.toString());
+
+  if (guestCount === null) return; // cancelled
+
+  const numGuests = parseInt(guestCount, 10);
+  if (isNaN(numGuests) || numGuests < 0) {
+    showToast('Please enter a valid number', 'error');
+    return;
+  }
+
+  if (numGuests > 3) {
+    showToast('Maximum 3 guests allowed', 'error');
+    return;
+  }
+
+  simulateResponse(golferId, 'in', numGuests);
 }
 
 async function randomResponses() {
@@ -343,7 +380,7 @@ async function loadEventStatus() {
 }
 
 function renderEventStatus(data) {
-  const { event, confirmed, waitlist, out, noResponse } = data;
+  const { event, confirmed, waitlist, out, noResponse, backupNotifiedAt, backupCount } = data;
   const times = JSON.parse(event.times);
 
   const dateStr = formatDateDisplay(event.date);
@@ -388,6 +425,25 @@ function renderEventStatus(data) {
 
   html += '</div>';
   document.getElementById('event-info').innerHTML = html;
+
+  // Update backup status
+  const backupStatusEl = document.getElementById('backup-status');
+  const notifyBackupsBtn = document.getElementById('notify-backups-btn');
+
+  if (backupNotifiedAt) {
+    const notifiedDate = new Date(backupNotifiedAt);
+    backupStatusEl.textContent = `Backups notified: ${notifiedDate.toLocaleString()}`;
+    backupStatusEl.classList.add('notified');
+    notifyBackupsBtn.disabled = true;
+    notifyBackupsBtn.textContent = 'Backups Notified';
+  } else {
+    backupStatusEl.textContent = backupCount > 0
+      ? `${backupCount} backup golfer${backupCount !== 1 ? 's' : ''} available`
+      : 'No backup golfers';
+    backupStatusEl.classList.remove('notified');
+    notifyBackupsBtn.disabled = backupCount === 0;
+    notifyBackupsBtn.textContent = 'Notify Backups';
+  }
 }
 
 async function loadManagerResponse() {
@@ -442,6 +498,11 @@ async function createEvent(e) {
       resultEl.className = 'result success';
       showToast(notifyMsg, 'success');
 
+      // Show message preview in test mode
+      if (testMode && data.message) {
+        showMessageModal(data.message, data.recipients || []);
+      }
+
       // Reset groupings for new event
       groupings = {};
 
@@ -479,6 +540,46 @@ async function closeEvent() {
   } catch (err) {
     showToast('Connection error', 'error');
     console.error('Close event error:', err);
+  }
+}
+
+async function notifyBackups() {
+  if (!currentEvent) return;
+
+  const confirmMsg = testMode
+    ? 'Notify backup golfers? (Test mode - no SMS will be sent)'
+    : 'Send event notification to all backup golfers?';
+
+  if (!confirm(confirmMsg)) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/api/event/notify-backups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ testMode })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      const msg = testMode
+        ? `Test mode: Would notify ${data.notified} backup golfers`
+        : `Notified ${data.notified} backup golfers`;
+      showToast(msg, 'success');
+
+      // Show message preview in test mode
+      if (testMode && data.message) {
+        showMessageModal(data.message, data.recipients || []);
+      }
+
+      loadEventStatus();
+    } else {
+      showToast(data.error || 'Failed to notify backups', 'error');
+    }
+  } catch (err) {
+    showToast('Connection error', 'error');
+    console.error('Notify backups error:', err);
   }
 }
 
@@ -522,7 +623,10 @@ async function loadGolfers() {
     listEl.innerHTML = golfers.map(g => `
       <div class="golfer-item">
         <div class="golfer-info">
-          <div class="golfer-name">${escapeHtml(g.name)}</div>
+          <div class="golfer-name">
+            ${escapeHtml(g.name)}
+            ${g.tier === 'backup' ? '<span class="tier-badge backup">backup</span>' : ''}
+          </div>
           <div class="golfer-phone">${formatPhoneDisplay(g.phone)}</div>
         </div>
         <button class="golfer-edit-btn" onclick="openEditModal(${g.id})">Edit</button>
@@ -539,6 +643,7 @@ async function addGolfer(e) {
 
   const name = document.getElementById('golfer-name').value.trim();
   const phone = normalizePhone(document.getElementById('golfer-phone').value);
+  const tier = document.getElementById('golfer-tier').value;
   const resultEl = document.getElementById('add-golfer-result');
 
   if (!phone) {
@@ -551,15 +656,16 @@ async function addGolfer(e) {
     const res = await fetch(`${API_BASE}/api/golfers`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone })
+      body: JSON.stringify({ name, phone, tier })
     });
     const data = await res.json();
 
     if (data.success) {
-      resultEl.textContent = `Added ${name}`;
+      resultEl.textContent = `Added ${name} (${tier})`;
       resultEl.className = 'result success';
       document.getElementById('golfer-name').value = '';
       document.getElementById('golfer-phone').value = '';
+      document.getElementById('golfer-tier').value = 'preferred';
       loadGolfers();
 
       // Refresh simulate list if in test mode
@@ -584,11 +690,22 @@ function openEditModal(golferId) {
   document.getElementById('edit-golfer-id').value = golferId;
   document.getElementById('edit-golfer-name').value = golfer.name;
   document.getElementById('edit-golfer-phone').value = formatPhoneDisplay(golfer.phone);
+  document.getElementById('edit-golfer-tier').value = golfer.tier || 'preferred';
   document.getElementById('edit-modal').classList.remove('hidden');
 }
 
 function closeEditModal() {
   document.getElementById('edit-modal').classList.add('hidden');
+}
+
+function showMessageModal(message, recipients) {
+  document.getElementById('message-preview').textContent = message;
+  document.getElementById('message-recipients').textContent = `Would send to ${recipients.length} golfer${recipients.length !== 1 ? 's' : ''}: ${recipients.join(', ')}`;
+  document.getElementById('message-modal').classList.remove('hidden');
+}
+
+function closeMessageModal() {
+  document.getElementById('message-modal').classList.add('hidden');
 }
 
 async function updateGolfer(e) {
@@ -597,6 +714,7 @@ async function updateGolfer(e) {
   const id = document.getElementById('edit-golfer-id').value;
   const name = document.getElementById('edit-golfer-name').value.trim();
   const phone = normalizePhone(document.getElementById('edit-golfer-phone').value);
+  const tier = document.getElementById('edit-golfer-tier').value;
 
   if (!phone) {
     showToast('Invalid phone number', 'error');
@@ -607,7 +725,7 @@ async function updateGolfer(e) {
     const res = await fetch(`${API_BASE}/api/golfers/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, phone })
+      body: JSON.stringify({ name, phone, tier })
     });
     const data = await res.json();
 
@@ -1008,6 +1126,7 @@ window.handleDragOver = handleDragOver;
 window.handleDragLeave = handleDragLeave;
 window.handleDrop = handleDrop;
 window.simulateResponse = simulateResponse;
+window.showGuestPicker = showGuestPicker;
 window.editGuest = editGuest;
 window.saveGuest = saveGuest;
 window.deleteGuest = deleteGuest;

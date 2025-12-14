@@ -4,7 +4,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('./db');
-const { createEventAndNotify, recordResponse, generateSummary } = require('./events');
+const { createEventAndNotify, notifyBackupGolfers, recordResponse, generateSummary } = require('./events');
 const { formatTime, formatDateForDisplay } = require('./parser');
 const { sendSMS, sendToMany } = require('./sms');
 
@@ -104,6 +104,45 @@ router.post('/event/close', (req, res) => {
 });
 
 /**
+ * Notify backup golfers for the current event
+ * In test mode, doesn't send SMS notifications
+ */
+router.post('/event/notify-backups', async (req, res) => {
+  try {
+    const { testMode } = req.body;
+    const event = db.getActiveEvent.get();
+
+    if (!event) {
+      return res.json({ success: false, error: 'No active event' });
+    }
+
+    if (testMode) {
+      // In test mode, mark as notified but don't send SMS
+      if (event.backup_notified_at) {
+        return res.json({ success: false, error: 'Backup golfers already notified' });
+      }
+      const backupGolfers = db.getAllBackupGolfers.all();
+      db.markBackupNotified.run(event.id);
+
+      // Build the message that would be sent
+      const times = JSON.parse(event.times);
+      const displayDate = formatDateForDisplay(event.date);
+      const timesDisplay = times.join(', ');
+      const message = `Golf ${displayDate} at ${event.course}\nTee times: ${timesDisplay}\nFirst 16 in. Reply IN or OUT.`;
+
+      console.log(`[TEST MODE] Would notify ${backupGolfers.length} backup golfers`);
+      res.json({ success: true, notified: backupGolfers.length, message, recipients: backupGolfers.map(g => g.name) });
+    } else {
+      const result = await notifyBackupGolfers(event.id);
+      res.json(result);
+    }
+  } catch (err) {
+    console.error('Notify backups error:', err);
+    res.json({ success: false, error: 'Failed to notify backup golfers' });
+  }
+});
+
+/**
  * Record manager's IN/OUT response
  */
 router.post('/event/respond', async (req, res) => {
@@ -133,7 +172,7 @@ router.post('/event/respond', async (req, res) => {
  */
 router.post('/event/simulate-response', async (req, res) => {
   try {
-    const { golferId, status } = req.body;
+    const { golferId, status, guests = 0 } = req.body;
 
     const event = db.getActiveEvent.get();
     if (!event) {
@@ -147,8 +186,9 @@ router.post('/event/simulate-response', async (req, res) => {
     }
 
     // Record the response without sending SMS (simulated)
-    const result = await recordResponseSilent(golfer, event.id, status);
-    res.json({ success: result.success, message: result.message });
+    // Use the real recordResponse for guest handling, but it won't send SMS in test mode
+    const result = await recordResponse(golfer, event.id, status, guests);
+    res.json({ success: result.success, message: result.message, guests: result.guests });
   } catch (err) {
     console.error('Simulate response error:', err);
     res.json({ success: false, error: 'Failed to simulate response' });
@@ -328,7 +368,7 @@ router.get('/golfers', (req, res) => {
  */
 router.post('/golfers', (req, res) => {
   try {
-    const { name, phone } = req.body;
+    const { name, phone, tier = 'preferred' } = req.body;
     const normalized = normalizePhone(phone);
 
     if (!normalized) {
@@ -341,7 +381,9 @@ router.post('/golfers', (req, res) => {
       return res.json({ success: false, error: 'Phone number already registered' });
     }
 
-    db.addGolfer.run(name, normalized);
+    // Validate tier
+    const validTier = tier === 'backup' ? 'backup' : 'preferred';
+    db.addGolferWithTier.run(name, normalized, validTier);
     res.json({ success: true });
   } catch (err) {
     console.error('Add golfer error:', err);
@@ -355,7 +397,7 @@ router.post('/golfers', (req, res) => {
 router.put('/golfers/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const { name, phone } = req.body;
+    const { name, phone, tier } = req.body;
     const normalized = normalizePhone(phone);
 
     if (!normalized) {
@@ -370,6 +412,12 @@ router.put('/golfers/:id', (req, res) => {
 
     db.updateGolferPhone.run(normalized, id);
     db.updateGolferName.run(name, normalized);
+
+    // Update tier if provided
+    if (tier) {
+      const validTier = tier === 'backup' ? 'backup' : 'preferred';
+      db.updateGolferTier.run(validTier, id);
+    }
 
     res.json({ success: true });
   } catch (err) {
@@ -458,12 +506,19 @@ function getEventStatusData(event) {
   const responses = db.getResponsesForEvent.all(event.id);
   const guests = db.getGuestsForEvent.all(event.id);
   const allGolfers = db.getAllActiveGolfers.all();
+  const backupGolfers = db.getAllBackupGolfers.all();
 
-  // Confirmed golfers
+  // Build guest count per golfer
+  const guestCountByGolfer = {};
+  guests.forEach(g => {
+    guestCountByGolfer[g.host_golfer_id] = (guestCountByGolfer[g.host_golfer_id] || 0) + 1;
+  });
+
+  // Confirmed golfers (with guest count)
   const confirmedGolfers = responses
     .filter(r => r.status === 'in' && r.position <= MAX_PLAYERS)
     .sort((a, b) => a.position - b.position)
-    .map(r => ({ ...r, type: 'golfer' }));
+    .map(r => ({ ...r, type: 'golfer', guests: guestCountByGolfer[r.golfer_id] || 0 }));
 
   // Confirmed guests
   const confirmedGuests = guests
@@ -474,11 +529,11 @@ function getEventStatusData(event) {
   const confirmed = [...confirmedGolfers, ...confirmedGuests]
     .sort((a, b) => a.position - b.position);
 
-  // Waitlist golfers
+  // Waitlist golfers (with guest count)
   const waitlistGolfers = responses
     .filter(r => r.status === 'in' && r.position > MAX_PLAYERS)
     .sort((a, b) => a.position - b.position)
-    .map(r => ({ ...r, type: 'golfer' }));
+    .map(r => ({ ...r, type: 'golfer', guests: guestCountByGolfer[r.golfer_id] || 0 }));
 
   // Waitlist guests
   const waitlistGuests = guests
@@ -494,7 +549,11 @@ function getEventStatusData(event) {
   const respondedIds = new Set(responses.map(r => r.golfer_id));
   const noResponse = allGolfers.filter(g => !respondedIds.has(g.id));
 
-  return { event, confirmed, waitlist, out, noResponse, guests };
+  // Backup info
+  const backupNotifiedAt = event.backup_notified_at;
+  const backupCount = backupGolfers.length;
+
+  return { event, confirmed, waitlist, out, noResponse, guests, backupNotifiedAt, backupCount };
 }
 
 /**
@@ -512,11 +571,16 @@ async function createEventWithoutNotify(date, course, times) {
   const result = db.createEvent.run(date, course, timesStr);
   const eventId = result.lastInsertRowid;
 
-  // Count how many golfers would be notified
-  const golfers = db.getAllActiveGolfers.all();
+  // Count how many preferred golfers would be notified
+  const golfers = db.getAllPreferredGolfers.all();
 
-  console.log(`[TEST MODE] Event ${eventId} created for ${date}, would notify ${golfers.length} golfers`);
-  return { eventId, notified: golfers.length };
+  // Build the message that would be sent
+  const displayDate = formatDateForDisplay(date);
+  const timesDisplay = times.join(', ');
+  const message = `Golf ${displayDate} at ${course}\nTee times: ${timesDisplay}\nFirst 16 in. Reply IN or OUT.`;
+
+  console.log(`[TEST MODE] Event ${eventId} created for ${date}, would notify ${golfers.length} preferred golfers`);
+  return { eventId, notified: golfers.length, message, recipients: golfers.map(g => g.name) };
 }
 
 /**

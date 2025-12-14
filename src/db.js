@@ -16,6 +16,7 @@ db.exec(`
     name TEXT NOT NULL,
     phone TEXT UNIQUE NOT NULL,
     active INTEGER DEFAULT 1,
+    tier TEXT DEFAULT 'preferred',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -26,6 +27,7 @@ db.exec(`
     times TEXT NOT NULL,
     max_players INTEGER DEFAULT 16,
     status TEXT DEFAULT 'open',
+    backup_notified_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -53,17 +55,37 @@ db.exec(`
   );
 `);
 
+// Migration: Add tier column to existing golfers table if it doesn't exist
+try {
+  db.exec(`ALTER TABLE golfers ADD COLUMN tier TEXT DEFAULT 'preferred'`);
+} catch (e) {
+  // Column already exists, ignore
+}
+
+// Migration: Add backup_notified_at column to existing events table if it doesn't exist
+try {
+  db.exec(`ALTER TABLE events ADD COLUMN backup_notified_at TEXT`);
+} catch (e) {
+  // Column already exists, ignore
+}
+
 // Golfer queries
 const addGolfer = db.prepare('INSERT OR IGNORE INTO golfers (name, phone) VALUES (?, ?)');
+const addGolferWithTier = db.prepare('INSERT OR IGNORE INTO golfers (name, phone, tier) VALUES (?, ?, ?)');
 const getGolferByPhone = db.prepare('SELECT * FROM golfers WHERE phone = ?');
+const getGolferById = db.prepare('SELECT * FROM golfers WHERE id = ?');
 const getAllActiveGolfers = db.prepare('SELECT * FROM golfers WHERE active = 1');
+const getAllPreferredGolfers = db.prepare("SELECT * FROM golfers WHERE active = 1 AND tier = 'preferred'");
+const getAllBackupGolfers = db.prepare("SELECT * FROM golfers WHERE active = 1 AND tier = 'backup'");
 const updateGolferName = db.prepare('UPDATE golfers SET name = ? WHERE phone = ?');
+const updateGolferTier = db.prepare('UPDATE golfers SET tier = ? WHERE id = ?');
 
 // Event queries
 const createEvent = db.prepare('INSERT INTO events (date, course, times) VALUES (?, ?, ?)');
 const getActiveEvent = db.prepare("SELECT * FROM events WHERE status = 'open' ORDER BY created_at DESC LIMIT 1");
 const closeEvent = db.prepare("UPDATE events SET status = 'closed' WHERE id = ?");
 const getEventById = db.prepare('SELECT * FROM events WHERE id = ?');
+const markBackupNotified = db.prepare("UPDATE events SET backup_notified_at = CURRENT_TIMESTAMP WHERE id = ?");
 const deactivateGolfer = db.prepare('UPDATE golfers SET active = 0 WHERE id = ?');
 const updateGolferPhone = db.prepare('UPDATE golfers SET phone = ? WHERE id = ?');
 
@@ -147,15 +169,21 @@ const getGuestCountForEvent = db.prepare(`
 module.exports = {
   db,
   addGolfer,
+  addGolferWithTier,
   getGolferByPhone,
+  getGolferById,
   getAllActiveGolfers,
+  getAllPreferredGolfers,
+  getAllBackupGolfers,
   updateGolferName,
   updateGolferPhone,
+  updateGolferTier,
   deactivateGolfer,
   createEvent,
   getActiveEvent,
   closeEvent,
   getEventById,
+  markBackupNotified,
   upsertResponse,
   getResponsesForEvent,
   getInCountForEvent,

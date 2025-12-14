@@ -17,7 +17,7 @@ console.log('DB loaded');
 const { parseManagerAnnouncement, parseGolferResponse } = require('./parser');
 console.log('Parser loaded');
 
-const { createEventAndNotify, recordResponse, forwardToManager } = require('./events');
+const { createEventAndNotify, notifyBackupGolfers, recordResponse, forwardToManager } = require('./events');
 console.log('Events loaded');
 
 const { sendSMS } = require('./sms');
@@ -86,6 +86,7 @@ async function handleManagerMessage(fromt, body, twiml) {
       'Commands:\n' +
       '• Golf announcement to create event\n' +
       '• STATUS - current event summary\n' +
+      '• BACKUPS - notify backup golfers\n' +
       '• CLOSED - send summary & close event\n' +
       '• LIST - all golfers\n' +
       '• ADD Name Phone\n' +
@@ -116,6 +117,21 @@ async function handleManagerMessage(fromt, body, twiml) {
       twiml.message(summary);
     } else {
       twiml.message('No active event to close.');
+    }
+    return;
+  }
+
+  if (command === 'notify backups' || command === 'backups') {
+    const event = db.getActiveEvent.get();
+    if (event) {
+      const result = await notifyBackupGolfers(event.id);
+      if (result.success) {
+        twiml.message(`Backup notification sent to ${result.notified} golfers.`);
+      } else {
+        twiml.message(result.message);
+      }
+    } else {
+      twiml.message('No active event.');
     }
     return;
   }
@@ -209,6 +225,7 @@ async function handleManagerMessage(fromt, body, twiml) {
       'Commands:\n' +
       '• Golf announcement to create event\n' +
       '• STATUS - current event summary\n' +
+      '• BACKUPS - notify backup golfers\n' +
       '• CLOSED - send summary & close event\n' +
       '• LIST - all golfers\n' +
       '• ADD Name Phone - add golfer'

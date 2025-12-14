@@ -62,8 +62,10 @@
           <h3>Quick Actions</h3>
           <div class="action-buttons">
             <button id="refresh-status-btn" class="btn btn-secondary">Refresh Status</button>
+            <button id="notify-backups-btn" class="btn btn-secondary">Notify Backups</button>
             <button id="close-event-btn" class="btn btn-warning">Close Event</button>
           </div>
+          <p id="backup-status" class="backup-status"></p>
           <div id="manager-response" class="manager-response">
             <h3>Your Response</h3>
             <div class="response-buttons">
@@ -119,6 +121,10 @@
             <div class="form-row">
               <input type="text" id="golfer-name" placeholder="Name" required>
               <input type="tel" id="golfer-phone" placeholder="Phone" required>
+              <select id="golfer-tier">
+                <option value="preferred">Preferred</option>
+                <option value="backup">Backup</option>
+              </select>
             </div>
             <button type="submit" class="btn btn-primary">Add Golfer</button>
           </form>
@@ -190,12 +196,31 @@
           <label>Phone</label>
           <input type="tel" id="edit-golfer-phone" required>
         </div>
+        <div class="form-group">
+          <label>Tier</label>
+          <select id="edit-golfer-tier">
+            <option value="preferred">Preferred</option>
+            <option value="backup">Backup</option>
+          </select>
+        </div>
         <div class="modal-buttons">
           <button type="button" id="cancel-edit-btn" class="btn btn-secondary">Cancel</button>
           <button type="button" id="delete-golfer-btn" class="btn btn-danger">Remove</button>
           <button type="submit" class="btn btn-primary">Save</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Message Preview Modal -->
+  <div id="message-modal" class="modal hidden">
+    <div class="modal-content">
+      <h2>Outgoing SMS Preview</h2>
+      <div id="message-preview" class="message-preview"></div>
+      <p id="message-recipients" class="message-recipients"></p>
+      <div class="modal-buttons">
+        <button type="button" id="close-message-modal-btn" class="btn btn-secondary">Close</button>
+      </div>
     </div>
   </div>
 

@@ -5,7 +5,16 @@ const { formatDateForDisplay } = require('./parser');
 const MAX_PLAYERS = 16;
 
 /**
- * Create a new golf event and notify all golfers
+ * Build the announcement message for an event
+ */
+function buildAnnouncementMessage(date, course, times) {
+  const displayDate = formatDateForDisplay(date);
+  const timesDisplay = times.join(', ');
+  return `Golf ${displayDate} at ${course}\nTee times: ${timesDisplay}\nFirst 16 in. Reply IN or OUT.`;
+}
+
+/**
+ * Create a new golf event and notify preferred golfers only
  */
 async function createEventAndNotify(date, course, times) {
   // Close any existing open events
@@ -20,20 +29,50 @@ async function createEventAndNotify(date, course, times) {
   const eventId = result.lastInsertRowid;
 
   // Build announcement message
-  const displayDate = formatDateForDisplay(date);
-  const timesDisplay = times.join(', ');
-  const message = `Golf ${displayDate} at ${course}\nTee times: ${timesDisplay}\nFirst 16 in. Reply IN or OUT.`;
+  const message = buildAnnouncementMessage(date, course, times);
 
-  // Get all active golfers and send
-  const golfers = db.getAllActiveGolfers.all();
+  // Get preferred golfers only and send
+  const golfers = db.getAllPreferredGolfers.all();
   const phones = golfers.map(g => g.phone);
 
   if (phones.length > 0) {
     await sendToMany(phones, message);
   }
 
-  console.log(`Event ${eventId} created for ${date}, notified ${phones.length} golfers`);
+  console.log(`Event ${eventId} created for ${date}, notified ${phones.length} preferred golfers`);
   return { eventId, notified: phones.length };
+}
+
+/**
+ * Notify backup golfers for an existing event
+ */
+async function notifyBackupGolfers(eventId) {
+  const event = db.getEventById.get(eventId);
+  if (!event) {
+    return { success: false, message: 'Event not found' };
+  }
+
+  if (event.backup_notified_at) {
+    return { success: false, message: 'Backup golfers already notified' };
+  }
+
+  // Build same announcement message
+  const times = JSON.parse(event.times);
+  const message = buildAnnouncementMessage(event.date, event.course, times);
+
+  // Get backup golfers and send
+  const golfers = db.getAllBackupGolfers.all();
+  const phones = golfers.map(g => g.phone);
+
+  if (phones.length > 0) {
+    await sendToMany(phones, message);
+  }
+
+  // Mark backup notification sent
+  db.markBackupNotified.run(eventId);
+
+  console.log(`Backup notification sent for event ${eventId}, notified ${phones.length} backup golfers`);
+  return { success: true, notified: phones.length };
 }
 
 /**
@@ -47,6 +86,11 @@ async function recordResponse(golfer, eventId, status, guestCount = 0) {
   const event = db.getEventById.get(eventId);
   if (!event) {
     return { success: false, message: 'No active event' };
+  }
+
+  // Backup golfers cannot bring guests - silently ignore guest count
+  if (golfer.tier === 'backup' && guestCount > 0) {
+    guestCount = 0;
   }
 
   // Check current response
@@ -304,6 +348,7 @@ async function forwardToManager(golfer, message) {
 
 module.exports = {
   createEventAndNotify,
+  notifyBackupGolfers,
   recordResponse,
   bumpWaitlist,
   generateSummary,

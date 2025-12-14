@@ -216,6 +216,16 @@ header h1 {
   flex: 1;
 }
 
+.backup-status {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 16px;
+}
+
+.backup-status.notified {
+  color: var(--success);
+}
+
 .response-buttons {
   display: flex;
   gap: 12px;
@@ -273,9 +283,19 @@ header h1 {
   border-radius: 10px;
 }
 
-.form-row input:focus {
+.form-row input:focus,
+.form-row select:focus {
   outline: none;
   border-color: var(--primary);
+}
+
+.form-row select {
+  padding: 14px;
+  font-size: 16px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  min-width: 110px;
 }
 
 /* Results & Errors */
@@ -365,6 +385,22 @@ header h1 {
 
 .golfer-name {
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tier-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+}
+
+.tier-badge.backup {
+  background: var(--warning);
+  color: white;
 }
 
 .golfer-phone {
@@ -707,6 +743,16 @@ header h1 {
   color: white;
 }
 
+.simulate-item .sim-btn.in-guest-btn {
+  background: var(--border);
+  color: var(--text);
+}
+
+.simulate-item .sim-btn.in-guest-btn.active {
+  background: var(--warning);
+  color: white;
+}
+
 .simulate-item .response-status {
   font-size: 12px;
   color: var(--text-light);
@@ -802,6 +848,24 @@ header h1 {
 
 .player-chip.guest::before {
   content: '';
+}
+
+/* Message Preview Modal */
+.message-preview {
+  background: var(--bg);
+  padding: 16px;
+  border-radius: 10px;
+  font-family: monospace;
+  font-size: 14px;
+  white-space: pre-wrap;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+
+.message-recipients {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-bottom: 0;
 }
 
 /* Dark mode support */
