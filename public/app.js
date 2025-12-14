@@ -824,50 +824,90 @@ async function loadGroupings() {
   }
 }
 
-// Track selected player for tap-to-assign
-let selectedPlayer = null;
+// Track selected players for tap-to-assign (up to 4)
+let selectedPlayers = [];
 
 function renderPlayersPool(confirmed) {
   const poolEl = document.getElementById('players-pool');
+  const clearBtn = document.getElementById('clear-selection-btn');
+  const instructions = document.getElementById('pool-instructions');
   const assignedPlayers = new Set(Object.values(groupings).flat());
 
   const unassigned = confirmed.filter(p => !assignedPlayers.has(p.name));
+  const hasSelection = selectedPlayers.length > 0;
 
-  poolEl.innerHTML = unassigned.map(p => `
-    <div class="player-chip ${p.type === 'guest' ? 'guest' : ''} ${selectedPlayer === p.name ? 'selected' : ''}"
-         draggable="true"
-         data-player="${escapeHtml(p.name)}"
-         onclick="selectPlayer('${escapeHtml(p.name).replace(/'/g, "\\'")}')"
-         ondragstart="handleDragStart(event)">${escapeHtml(p.name)}</div>
-  `).join('') || '<span style="color: var(--text-light)">All players assigned</span>';
+  // Toggle clear button visibility
+  if (clearBtn) {
+    clearBtn.classList.toggle('hidden', !hasSelection);
+  }
+
+  // Update instructions
+  if (instructions) {
+    if (unassigned.length === 0) {
+      instructions.textContent = 'All players assigned';
+    } else if (hasSelection) {
+      instructions.textContent = `${selectedPlayers.length} selected — tap a tee time below`;
+    } else {
+      instructions.textContent = 'Tap players to select, then tap a tee time';
+    }
+  }
+
+  poolEl.innerHTML = unassigned.map(p => {
+    const selectionIndex = selectedPlayers.indexOf(p.name);
+    const isSelected = selectionIndex !== -1;
+    return `
+      <div class="player-chip ${p.type === 'guest' ? 'guest' : ''} ${isSelected ? 'selected' : ''}"
+           draggable="true"
+           data-player="${escapeHtml(p.name)}"
+           onclick="selectPlayer('${escapeHtml(p.name).replace(/'/g, "\\'")}')"
+           ondragstart="handleDragStart(event)">
+        ${isSelected ? `<span class="selection-badge">${selectionIndex + 1}</span>` : ''}${escapeHtml(p.name)}
+      </div>
+    `;
+  }).join('') || '';
 }
 
 function selectPlayer(playerName) {
-  if (selectedPlayer === playerName) {
-    // Deselect if tapping same player
-    selectedPlayer = null;
+  const index = selectedPlayers.indexOf(playerName);
+  if (index !== -1) {
+    // Deselect if already selected
+    selectedPlayers.splice(index, 1);
+  } else if (selectedPlayers.length < 4) {
+    // Add to selection (max 4)
+    selectedPlayers.push(playerName);
   } else {
-    selectedPlayer = playerName;
+    showToast('Maximum 4 players selected', 'error');
+    return;
   }
-  // Re-render to update UI
   loadGroupings();
 }
 
-function assignToSlot(time, slot) {
-  if (!selectedPlayer) return;
+function clearSelection() {
+  selectedPlayers = [];
+  loadGroupings();
+}
 
-  // Check if slot is already filled
-  if (groupings[time]?.[slot]) return;
+function assignToFoursome(time) {
+  if (selectedPlayers.length === 0) return;
 
-  // Ensure array exists and has enough slots
-  if (!groupings[time]) groupings[time] = [];
-  while (groupings[time].length <= slot) {
-    groupings[time].push(null);
+  // Ensure array exists
+  if (!groupings[time]) groupings[time] = [null, null, null, null];
+
+  // Fill empty slots with selected players
+  let playerIndex = 0;
+  for (let slot = 0; slot < 4 && playerIndex < selectedPlayers.length; slot++) {
+    if (!groupings[time][slot]) {
+      groupings[time][slot] = selectedPlayers[playerIndex];
+      playerIndex++;
+    }
   }
 
-  groupings[time][slot] = selectedPlayer;
-  selectedPlayer = null;
+  // Check if all players were assigned
+  if (playerIndex < selectedPlayers.length) {
+    showToast(`Only ${playerIndex} slot(s) available`, 'error');
+  }
 
+  selectedPlayers = [];
   loadGroupings();
 }
 
@@ -976,37 +1016,43 @@ async function deleteGuest(guestId) {
 
 function renderFoursomes(times, confirmed) {
   const container = document.getElementById('foursomes-container');
+  const hasSelection = selectedPlayers.length > 0;
 
-  container.innerHTML = times.map((time, idx) => `
-    <div class="foursome-card">
-      <div class="foursome-header">
-        <h4>Foursome ${idx + 1}</h4>
-        <span class="foursome-time">${time}</span>
+  container.innerHTML = times.map((time, idx) => {
+    const slots = groupings[time] || [null, null, null, null];
+    const filledCount = slots.filter(s => s).length;
+    const emptyCount = 4 - filledCount;
+    const canFit = emptyCount >= selectedPlayers.length;
+
+    return `
+      <div class="foursome-card ${hasSelection ? 'selectable' : ''} ${hasSelection && canFit ? 'available' : ''}"
+           onclick="${hasSelection ? `assignToFoursome('${time}')` : ''}">
+        <div class="foursome-header">
+          <span class="foursome-time">${time}</span>
+          <span class="foursome-count">${filledCount}/4</span>
+        </div>
+        <div class="foursome-slots" data-time="${time}">
+          ${[0, 1, 2, 3].map(slot => {
+            const player = slots[slot];
+            return `
+              <div class="foursome-slot ${player ? 'filled' : ''}"
+                   data-time="${time}" data-slot="${slot}"
+                   ondragover="handleDragOver(event)"
+                   ondragleave="handleDragLeave(event)"
+                   ondrop="handleDrop(event)">
+                ${player ? `
+                  <span class="slot-player">${escapeHtml(player)}</span>
+                  <button class="slot-remove" onclick="event.stopPropagation(); removeFromSlot('${time}', ${slot})">×</button>
+                ` : `
+                  <span class="slot-placeholder">${hasSelection ? '' : '—'}</span>
+                `}
+              </div>
+            `;
+          }).join('')}
+        </div>
       </div>
-      <div class="foursome-slots" data-time="${time}">
-        ${[0, 1, 2, 3].map(slot => {
-          const player = groupings[time]?.[slot];
-          const isEmpty = !player;
-          const showAvailable = isEmpty && selectedPlayer;
-          return `
-            <div class="foursome-slot ${player ? 'filled' : ''} ${showAvailable ? 'available' : ''}"
-                 data-time="${time}" data-slot="${slot}"
-                 onclick="${isEmpty ? `assignToSlot('${time}', ${slot})` : ''}"
-                 ondragover="handleDragOver(event)"
-                 ondragleave="handleDragLeave(event)"
-                 ondrop="handleDrop(event)">
-              ${player ? `
-                <span class="slot-player">${escapeHtml(player)}</span>
-                <button class="slot-remove" onclick="event.stopPropagation(); removeFromSlot('${time}', ${slot})">×</button>
-              ` : `
-                <span class="slot-placeholder">${selectedPlayer ? 'Tap to assign' : 'Tap player above'}</span>
-              `}
-            </div>
-          `;
-        }).join('')}
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   updateSendButton();
 }
@@ -1184,4 +1230,5 @@ window.editGuest = editGuest;
 window.saveGuest = saveGuest;
 window.deleteGuest = deleteGuest;
 window.selectPlayer = selectPlayer;
-window.assignToSlot = assignToSlot;
+window.assignToFoursome = assignToFoursome;
+window.clearSelection = clearSelection;

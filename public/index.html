@@ -154,7 +154,11 @@
 
           <!-- Confirmed Players Pool -->
           <div class="card">
-            <h3>Confirmed Players</h3>
+            <div class="pool-header">
+              <h3>Confirmed Players</h3>
+              <button id="clear-selection-btn" class="btn-text hidden" onclick="clearSelection()">Clear selection</button>
+            </div>
+            <p id="pool-instructions" class="card-description">Tap players to select, then tap a tee time</p>
             <div id="players-pool" class="players-pool"></div>
           </div>
 
