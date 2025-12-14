@@ -844,28 +844,43 @@ function renderGuestsList(guests) {
     return;
   }
 
+  // Store guest data for edit function
+  window.guestData = {};
+  guests.forEach(g => {
+    window.guestData[g.id] = g.name;
+  });
+
   listEl.innerHTML = guests.map(g => `
     <div class="guest-item" data-guest-id="${g.id}">
-      <span class="guest-name" onclick="editGuest(${g.id}, '${escapeHtml(g.name)}')">${escapeHtml(g.name)}</span>
+      <span class="guest-name" onclick="editGuest(${g.id})">${escapeHtml(g.name)}</span>
       <span class="guest-host">Guest of ${escapeHtml(g.host_name)}</span>
     </div>
   `).join('');
 }
 
-function editGuest(guestId, currentName) {
+function editGuest(guestId) {
+  const currentName = window.guestData?.[guestId] || 'Guest';
   const item = document.querySelector(`.guest-item[data-guest-id="${guestId}"]`);
   if (!item) return;
 
-  item.innerHTML = `
-    <input type="text" class="guest-edit-input" value="${escapeHtml(currentName)}" autofocus>
-    <div class="guest-actions">
-      <button class="guest-btn save" onclick="saveGuest(${guestId})">Save</button>
-      <button class="guest-btn cancel" onclick="loadGroupings()">Cancel</button>
-      <button class="guest-btn delete" onclick="deleteGuest(${guestId})">Delete</button>
-    </div>
+  // Create input element properly to handle special characters
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'guest-edit-input';
+  input.value = currentName;
+
+  const actionsDiv = document.createElement('div');
+  actionsDiv.className = 'guest-actions';
+  actionsDiv.innerHTML = `
+    <button class="guest-btn save" onclick="saveGuest(${guestId})">Save</button>
+    <button class="guest-btn cancel" onclick="loadGroupings()">Cancel</button>
+    <button class="guest-btn delete" onclick="deleteGuest(${guestId})">Delete</button>
   `;
 
-  const input = item.querySelector('.guest-edit-input');
+  item.innerHTML = '';
+  item.appendChild(input);
+  item.appendChild(actionsDiv);
+
   input.focus();
   input.select();
 
