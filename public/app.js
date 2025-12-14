@@ -824,6 +824,9 @@ async function loadGroupings() {
   }
 }
 
+// Track selected player for tap-to-assign
+let selectedPlayer = null;
+
 function renderPlayersPool(confirmed) {
   const poolEl = document.getElementById('players-pool');
   const assignedPlayers = new Set(Object.values(groupings).flat());
@@ -831,9 +834,41 @@ function renderPlayersPool(confirmed) {
   const unassigned = confirmed.filter(p => !assignedPlayers.has(p.name));
 
   poolEl.innerHTML = unassigned.map(p => `
-    <div class="player-chip ${p.type === 'guest' ? 'guest' : ''}" draggable="true" data-player="${escapeHtml(p.name)}"
+    <div class="player-chip ${p.type === 'guest' ? 'guest' : ''} ${selectedPlayer === p.name ? 'selected' : ''}"
+         draggable="true"
+         data-player="${escapeHtml(p.name)}"
+         onclick="selectPlayer('${escapeHtml(p.name).replace(/'/g, "\\'")}')"
          ondragstart="handleDragStart(event)">${escapeHtml(p.name)}</div>
   `).join('') || '<span style="color: var(--text-light)">All players assigned</span>';
+}
+
+function selectPlayer(playerName) {
+  if (selectedPlayer === playerName) {
+    // Deselect if tapping same player
+    selectedPlayer = null;
+  } else {
+    selectedPlayer = playerName;
+  }
+  // Re-render to update UI
+  loadGroupings();
+}
+
+function assignToSlot(time, slot) {
+  if (!selectedPlayer) return;
+
+  // Check if slot is already filled
+  if (groupings[time]?.[slot]) return;
+
+  // Ensure array exists and has enough slots
+  if (!groupings[time]) groupings[time] = [];
+  while (groupings[time].length <= slot) {
+    groupings[time].push(null);
+  }
+
+  groupings[time][slot] = selectedPlayer;
+  selectedPlayer = null;
+
+  loadGroupings();
 }
 
 function renderGuestsList(guests) {
@@ -951,17 +986,20 @@ function renderFoursomes(times, confirmed) {
       <div class="foursome-slots" data-time="${time}">
         ${[0, 1, 2, 3].map(slot => {
           const player = groupings[time]?.[slot];
+          const isEmpty = !player;
+          const showAvailable = isEmpty && selectedPlayer;
           return `
-            <div class="foursome-slot ${player ? 'filled' : ''}"
+            <div class="foursome-slot ${player ? 'filled' : ''} ${showAvailable ? 'available' : ''}"
                  data-time="${time}" data-slot="${slot}"
+                 onclick="${isEmpty ? `assignToSlot('${time}', ${slot})` : ''}"
                  ondragover="handleDragOver(event)"
                  ondragleave="handleDragLeave(event)"
                  ondrop="handleDrop(event)">
               ${player ? `
                 <span class="slot-player">${escapeHtml(player)}</span>
-                <button class="slot-remove" onclick="removeFromSlot('${time}', ${slot})">×</button>
+                <button class="slot-remove" onclick="event.stopPropagation(); removeFromSlot('${time}', ${slot})">×</button>
               ` : `
-                <span class="slot-placeholder">Drop player here</span>
+                <span class="slot-placeholder">${selectedPlayer ? 'Tap to assign' : 'Tap player above'}</span>
               `}
             </div>
           `;
@@ -1145,3 +1183,5 @@ window.showGuestPicker = showGuestPicker;
 window.editGuest = editGuest;
 window.saveGuest = saveGuest;
 window.deleteGuest = deleteGuest;
+window.selectPlayer = selectPlayer;
+window.assignToSlot = assignToSlot;
